@@ -60,10 +60,9 @@ export class EnemyProjectile {
       this.group.add(glowMesh, coreMesh);
       this.materials.push(core, glow);
     } else {
-      const goo = new THREE.MeshStandardMaterial({
+      const goo = new THREE.MeshLambertMaterial({
         color: 0x6fe06f,
         emissive: 0x2a8a30,
-        roughness: 0.15,
         transparent: true,
         opacity: 0.92,
       });

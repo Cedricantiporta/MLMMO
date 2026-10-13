@@ -22,7 +22,7 @@ Enemies never touch you. Each type keeps its own distance and attack speed.
 | Slime | Attack | On death |
 |---|---|---|
 | Normal | Spit at mid range, medium speed | Splat |
-| Fire | Slow, long-range fireball | Explodes and sets the grass on fire. Burning ground hurts heroes **and** enemies |
+| Fire | Slow, long-range fireball | Explodes and sets the ground on fire. Burning ground hurts heroes **and** enemies |
 | Ice | Fast, short-range frost slam | Explodes and freezes everyone nearby, heroes **and** enemies |
 
 ## Develop
@@ -39,7 +39,7 @@ Import the repo in Vercel. It detects Vite automatically; `vercel.json` sets the
 All tunables live in `src/core/config.js`. `PLAN.md` holds the module contract.
 ```
 src/core      Game loop, input, camera, config, rng
-src/world     Map (World.js: ground, trees, bounds) and FireField (burnable grass grid)
+src/world     Map (World.js: flat ground, few trees/rocks, stone rim, blob shadows) and FireField (burnable ground grid)
 src/entities  Unit base, status effects, ElfArcher (+ procedural model), Slime, HealthOrb
 src/combat    Arrows, Rain of Arrows, skills, enemy projectiles
 src/fx        GPU point particles and one-shot effects

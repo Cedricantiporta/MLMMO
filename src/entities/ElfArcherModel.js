@@ -13,7 +13,7 @@ export function createElfArcherModel() {
   const materials = [];
 
   const mat = (color, { rough = 0.75, metal = 0, emissive = 0x000000, emissiveIntensity = 1, side = THREE.FrontSide } = {}) => {
-    const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive, emissiveIntensity, side });
+    const m = new THREE.MeshLambertMaterial({ color, emissive, emissiveIntensity, side });
     materials.push(m);
     return m;
   };
@@ -44,7 +44,6 @@ export function createElfArcherModel() {
 
   const add = (geo, material, parent, x = 0, y = 0, z = 0) => {
     const m = new THREE.Mesh(geo, material);
-    m.castShadow = true;
     m.position.set(x, y, z);
     parent.add(m);
     return m;
@@ -273,10 +272,6 @@ export function createElfArcherModel() {
   // Bow in the left hand: vertical when the arm points forward (shoulder.rotation.x = -PI/2).
   bowGroup.rotation.x = Math.PI / 2;
   arms.L.grip.add(bowGroup);
-
-  root.traverse((o) => {
-    if (o.isMesh) o.castShadow = true;
-  });
 
   return {
     root,

@@ -52,7 +52,7 @@ export function getArrowGeometry() {
 
 export function getArrowMaterial() {
   if (!sharedMaterial) {
-    sharedMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide });
+    sharedMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   }
   return sharedMaterial;
 }
@@ -60,6 +60,5 @@ export function getArrowMaterial() {
 // Arrow pointing +Z, length ARROW_LENGTH, centred at the origin. Shares geometry + material.
 export function createArrowMesh(material = getArrowMaterial()) {
   const mesh = new THREE.Mesh(getArrowGeometry(), material);
-  mesh.castShadow = true;
   return mesh;
 }

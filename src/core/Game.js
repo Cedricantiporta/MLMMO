@@ -31,18 +31,17 @@ export class Game {
     this._last = 0;
 
     // renderer / scene / camera
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer = new THREE.WebGLRenderer({ antialias: dpr <= 1, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(dpr, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = false; // blob shadows instead
+    this.renderer.toneMapping = THREE.NoToneMapping; // flat, saturated mobile look
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(SKY);
-    this.scene.fog = new THREE.Fog(SKY, 45, 90);
+    this.scene.fog = new THREE.Fog(SKY, 55, 95);
     this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, window.innerWidth / window.innerHeight, 0.5, 200);
 
     // systems, in contract order
@@ -52,7 +51,7 @@ export class Game {
     this.fx = new Effects(this);
     this.world = new World(this);
     this.fire = new FireField(this);
-    this.world.indexTufts(this.fire);
+    this.world.indexTufts(this.fire); // no-op (grass removed)
     this.hero = new ElfArcher(this);
     this.hud = new HUD(this);
     this.spawner = new Spawner(this);

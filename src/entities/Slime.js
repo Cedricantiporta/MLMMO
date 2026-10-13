@@ -45,7 +45,7 @@ function getShared() {
     crystal: new THREE.ConeGeometry(0.075, 0.34, 5),
     hpBg: new THREE.PlaneGeometry(1, 1),
     hpFill,
-    eyeMat: new THREE.MeshStandardMaterial({ color: 0x07070a, roughness: 0.1, metalness: 0.2 }),
+    eyeMat: new THREE.MeshLambertMaterial({ color: 0x07070a }),
     highlightMat: new THREE.MeshBasicMaterial({ color: 0xffffff }),
     mouthMat: new THREE.MeshBasicMaterial({ color: 0x14231a }),
     hpBgMat: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, depthTest: false, depthWrite: false }),
@@ -118,18 +118,15 @@ export class Slime extends Unit {
     const color = new THREE.Color(def.color);
     this.materials = []; // per-instance, disposed in dispose()
 
-    this.shellMat = new THREE.MeshStandardMaterial({
+    this.shellMat = new THREE.MeshLambertMaterial({
       color,
       emissive: color.clone().multiplyScalar(0.2),
-      roughness: 0.2,
-      metalness: 0,
       transparent: true,
       opacity: 0.88,
     });
-    this.coreMat = new THREE.MeshStandardMaterial({
+    this.coreMat = new THREE.MeshLambertMaterial({
       color: color.clone().multiplyScalar(0.5),
       emissive: color.clone().multiplyScalar(0.12),
-      roughness: 0.5,
     });
     this.glowMat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
@@ -142,7 +139,6 @@ export class Slime extends Unit {
     this.root.add(this.body);
 
     const shell = new THREE.Mesh(g.body, this.shellMat);
-    shell.castShadow = true;
     const glow = new THREE.Mesh(g.body, this.glowMat);
     glow.scale.setScalar(1.1);
     glow.position.y = -0.03;
@@ -206,13 +202,11 @@ export class Slime extends Unit {
   }
 
   _buildCrystals(g) {
-    this.crystalMat = new THREE.MeshStandardMaterial({
+    this.crystalMat = new THREE.MeshLambertMaterial({
       color: 0xcff4ff,
       emissive: 0x3aa8e8,
       emissiveIntensity: 0.9,
       flatShading: true,
-      roughness: 0.15,
-      metalness: 0.1,
     });
     this.materials.push(this.crystalMat);
     const spec = [
@@ -227,7 +221,6 @@ export class Slime extends Unit {
       m.position.set(x, 0.78 + sc * 0.1 - 0.05, z);
       m.scale.setScalar(sc);
       m.rotation.set(rx, 0, rz);
-      m.castShadow = true;
       this.face.add(m);
       this.crystals.push(m);
     }

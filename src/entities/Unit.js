@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { StatusEffects } from './StatusEffects.js';
+import { createBlobShadow } from '../world/blobShadow.js';
 
 const FLASH_TIME = 0.14;
 const FROZEN_TINT = new THREE.Color(0x2a8fc0);
@@ -26,6 +27,8 @@ export class Unit {
     this.root = new THREE.Group(); // never rotated; models rotate inside it
     this.position = this.root.position;
     game.scene.add(this.root);
+    this.shadow = createBlobShadow(radius * 3.2);
+    this.root.add(this.shadow);
 
     this.status = new StatusEffects(this);
   }

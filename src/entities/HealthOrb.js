@@ -23,7 +23,7 @@ export class HealthOrb {
 
     if (!sphereGeo) sphereGeo = new THREE.SphereGeometry(1, 16, 12);
 
-    this.coreMat = new THREE.MeshStandardMaterial({ color: 0xff4458, emissive: 0xff1428, emissiveIntensity: 1.6, roughness: 0.25 });
+    this.coreMat = new THREE.MeshLambertMaterial({ color: 0xff4458, emissive: 0xff1428, emissiveIntensity: 1.6 });
     this.glowMat = new THREE.MeshBasicMaterial({ color: 0xff3040, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false });
     const core = new THREE.Mesh(sphereGeo, this.coreMat);
     core.scale.setScalar(0.17);

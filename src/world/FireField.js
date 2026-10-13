@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { hash01, rand } from '../core/rng.js';
 
-const MAX_FLAMES = 1600;
+const MAX_FLAMES = 800;
 const YELLOW = new THREE.Color(0xffd23a);
 const ORANGE = new THREE.Color(0xff5a14);
 
-// Grid of ground cells that can burn and then stay scorched before the grass regrows.
+// Grid of ground cells that can burn and then stay scorched before it fades.
 export class FireField {
   constructor(game) {
     this.game = game;
@@ -49,7 +49,7 @@ export class FireField {
   }
 
   buildFlames() {
-    const geo = new THREE.ConeGeometry(0.2, 1, 5);
+    const geo = new THREE.ConeGeometry(0.2, 1, 4);
     geo.translate(0, 0.5, 0);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -192,7 +192,7 @@ export class FireField {
     // Embers and the occasional smoke wisp from a random burning cell.
     if (list.length) {
       const dt = this.game.lastDt || 0.016;
-      let budget = Math.min(6, list.length * dt * 0.8);
+      let budget = Math.min(3, list.length * dt * 0.5);
       while (budget > 0) {
         if (Math.random() >= budget) break;
         budget -= 1;

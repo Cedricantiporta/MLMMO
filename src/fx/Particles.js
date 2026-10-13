@@ -145,8 +145,8 @@ class Pool {
 export class Particles {
   constructor(game) {
     this.game = game;
-    this.additive = new Pool(game.scene, 2500, true);
-    this.normal = new Pool(game.scene, 1500, false);
+    this.additive = new Pool(game.scene, 1500, true);
+    this.normal = new Pool(game.scene, 900, false);
     this.resize();
   }
 

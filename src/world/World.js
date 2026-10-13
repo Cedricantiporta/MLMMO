@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../core/config.js';
 import { mulberry32 } from '../core/rng.js';
+import { blobShadowAssets } from './blobShadow.js';
 
-const SUN_OFFSET = new THREE.Vector3(12, 22, 8);
-const TUFT_COUNT = 3500;
-
-// Meadow: lights, ground, instanced grass/trees/rocks and the obstacle list used for collision.
+// Mobile-style meadow: flat saturated ground, a stone rim, a few chunky trees/rocks, blob shadows.
+// Map code is isolated here; the grass system was removed (tuft methods are kept as no-ops).
 export class World {
   constructor(game) {
     this.game = game;
@@ -14,272 +13,155 @@ export class World {
     this.half = CONFIG.map.playHalf;
     this.obstacles = [];
     this.rng = mulberry32(CONFIG.map.seed);
+    this.shadowSpots = []; // {x,z,size} for static blob shadows
 
     this.buildLights();
     this.buildGround();
-    this.buildTufts();
+    this.buildBorder();
     this.buildTrees();
     this.buildRocks();
+    this.buildStaticShadows();
   }
 
-  // ---- lights -------------------------------------------------------------
+  // ---- lights (no shadow maps) --------------------------------------------
   buildLights() {
-    const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a6b2a, 0.9);
-    this.scene.add(hemi);
-
-    const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const cam = sun.shadow.camera;
-    cam.left = -18; cam.right = 18; cam.top = 18; cam.bottom = -18;
-    cam.near = 1; cam.far = 70;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.02;
-    sun.position.copy(SUN_OFFSET);
-    this.scene.add(sun, sun.target);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb5d99a, 1.9));
+    const sun = new THREE.DirectionalLight(0xfff4dc, 1.5);
+    sun.position.set(12, 22, 8);
+    this.scene.add(sun);
     this.sun = sun;
   }
 
   // ---- ground -------------------------------------------------------------
-  makeGrassTexture() {
-    const S = 512;
-    const rng = mulberry32(CONFIG.map.seed + 11);
+  buildGround() {
+    // Outer skirt (darker, fades into fog) + play field with a soft vignette texture.
+    const outerGeo = new THREE.PlaneGeometry(260, 260);
+    outerGeo.rotateX(-Math.PI / 2);
+    const outer = new THREE.Mesh(outerGeo, new THREE.MeshLambertMaterial({ color: 0x5fa845 }));
+    outer.position.y = -0.4;
+    this.scene.add(outer);
+
+    const S = 128;
     const cv = document.createElement('canvas');
     cv.width = cv.height = S;
     const g = cv.getContext('2d');
-    g.fillStyle = '#4d8a34';
+    g.fillStyle = '#7cc35a';
     g.fillRect(0, 0, S, S);
-
-    // soft blotches (drawn wrapped so the texture tiles)
-    for (let i = 0; i < 46; i++) {
-      const x = rng() * S;
-      const y = rng() * S;
-      const r = 30 + rng() * 70;
-      const light = rng() < 0.5;
-      const col = light ? '150,200,80' : '30,80,36';
-      for (const ox of [-S, 0, S]) {
-        for (const oy of [-S, 0, S]) {
-          const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
-          gr.addColorStop(0, `rgba(${col},${0.22 + rng() * 0.12})`);
-          gr.addColorStop(1, `rgba(${col},0)`);
-          g.fillStyle = gr;
-          g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
-        }
-      }
+    const patches = [[0.25, 0.3, 0.3], [0.75, 0.65, 0.35], [0.55, 0.15, 0.2], [0.2, 0.8, 0.25]];
+    for (const [px, py, pr] of patches) {
+      const gr = g.createRadialGradient(px * S, py * S, 0, px * S, py * S, pr * S);
+      gr.addColorStop(0, 'rgba(160,220,110,0.35)');
+      gr.addColorStop(1, 'rgba(160,220,110,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, S, S);
     }
-    // speckles
-    for (let i = 0; i < 5200; i++) {
-      const x = rng() * S;
-      const y = rng() * S;
-      const l = 22 + rng() * 38;
-      g.fillStyle = `hsla(${88 + rng() * 40},${45 + rng() * 25}%,${l}%,${0.35 + rng() * 0.4})`;
-      g.fillRect(x, y, 1 + rng() * 2, 1 + rng() * 3);
-    }
+    const vg = g.createRadialGradient(S / 2, S / 2, S * 0.35, S / 2, S / 2, S * 0.75);
+    vg.addColorStop(0, 'rgba(40,110,40,0)');
+    vg.addColorStop(1, 'rgba(40,110,40,0.28)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, S, S);
     const tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(12, 12);
     tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = this.game.renderer.capabilities.getMaxAnisotropy();
-    return tex;
-  }
+    tex.anisotropy = 1;
+    this.groundTex = tex;
 
-  buildGround() {
-    const geo = new THREE.PlaneGeometry(140, 140);
+    const w = this.half * 2 + 4;
+    const geo = new THREE.PlaneGeometry(w, w);
     geo.rotateX(-Math.PI / 2);
-    this.groundTex = this.makeGrassTexture();
-    const mat = new THREE.MeshLambertMaterial({ map: this.groundTex });
-    const ground = new THREE.Mesh(geo, mat);
-    ground.receiveShadow = true;
+    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
     this.scene.add(ground);
     this.ground = ground;
+
+    // Sandy clearing at spawn.
+    const cg = new THREE.CircleGeometry(5, 32);
+    cg.rotateX(-Math.PI / 2);
+    const clearing = new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color: 0xe6d29a }));
+    clearing.position.y = 0.01;
+    this.scene.add(clearing);
   }
 
-  // ---- grass tufts --------------------------------------------------------
-  buildTufts() {
-    // 3 crossed blades, each a single upward-pointing triangle with straight-up normals.
-    const pos = [];
-    const nor = [];
-    const w = 0.07;
-    const h = 0.55;
-    for (let b = 0; b < 3; b++) {
-      const a = (b * Math.PI) / 3;
-      const dx = Math.cos(a) * w;
-      const dz = Math.sin(a) * w;
-      const lean = 0.08;
-      pos.push(-dx, 0, -dz, dx, 0, dz, Math.sin(a) * lean, h, Math.cos(a) * lean);
-      nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
-      // reversed twin so both faces are front-facing (keeps the upward normals lit correctly)
-      pos.push(dx, 0, dz, -dx, 0, -dz, Math.sin(a) * lean, h, Math.cos(a) * lean);
-      nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const mesh = new THREE.InstancedMesh(geo, mat, TUFT_COUNT);
-    const rng = this.rng;
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const s = new THREE.Vector3();
-    const p = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-    const col = new THREE.Color();
-    const extent = this.half + 4;
-    this.tuftPos = new Float32Array(TUFT_COUNT * 2);
-    for (let i = 0; i < TUFT_COUNT; i++) {
-      const x = (rng() * 2 - 1) * extent;
-      const z = (rng() * 2 - 1) * extent;
-      const sc = 0.7 + rng() * 1.1;
-      q.setFromAxisAngle(up, rng() * Math.PI * 2);
-      p.set(x, 0, z);
-      s.set(sc, sc * (0.8 + rng() * 0.6), sc);
-      m.compose(p, q, s);
-      mesh.setMatrixAt(i, m);
-      col.setHSL(0.25 + rng() * 0.08, 0.5 + rng() * 0.2, 0.28 + rng() * 0.16);
-      mesh.setColorAt(i, col);
-      this.tuftPos[i * 2] = x;
-      this.tuftPos[i * 2 + 1] = z;
-    }
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
-    this.scene.add(mesh);
-    this.tufts = mesh;
-    this.tuftMatrices = new Float32Array(mesh.instanceMatrix.array); // originals for regrow
-    this.tuftHidden = new THREE.Matrix4().compose(
-      new THREE.Vector3(0, -10, 0), new THREE.Quaternion(), new THREE.Vector3(0, 0, 0),
-    );
-    this.tuftsByCell = new Map();
+  // Low stone rim around the play field (4 boxes) with a darker cliff face below it.
+  buildBorder() {
+    const h = this.half;
+    const t = 1.6;
+    const wallH = 0.9;
+    const L = (h + t) * 2;
+    const mk = (w, d, x, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), this.wallMat);
+      m.position.set(x, wallH / 2 - 0.05, z);
+      this.scene.add(m);
+    };
+    this.wallMat = new THREE.MeshLambertMaterial({ color: 0xc9b98f });
+    const o = h + t / 2 + 0.3;
+    mk(L, t, 0, -o); mk(L, t, 0, o); mk(t, L - t * 2, -o, 0); mk(t, L - t * 2, o, 0);
+    // dark base so the rim reads as a raised edge
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x8d7a55 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(L + 1.2, 0.3, L + 1.2), baseMat);
+    base.position.y = -0.2;
+    // (hidden under the ground plane; only the outer lip peeks out)
+    this.scene.add(base);
   }
 
-  // Bucket tufts by fire-grid cell so burn/regrow only touch the cell's own instances.
-  indexTufts(fire) {
-    this.tuftsByCell.clear();
-    for (let i = 0; i < TUFT_COUNT; i++) {
-      const c = fire.cellIndex(this.tuftPos[i * 2], this.tuftPos[i * 2 + 1]);
-      if (c < 0) continue;
-      let list = this.tuftsByCell.get(c);
-      if (!list) this.tuftsByCell.set(c, (list = []));
-      list.push(i);
-    }
-  }
-
-  burnTufts(cell) {
-    const list = this.tuftsByCell.get(cell);
-    if (!list) return;
-    for (const i of list) this.tufts.setMatrixAt(i, this.tuftHidden);
-    this.tufts.instanceMatrix.needsUpdate = true;
-  }
-
-  regrowTufts(cell) {
-    const list = this.tuftsByCell.get(cell);
-    if (!list) return;
-    const m = new THREE.Matrix4();
-    for (const i of list) {
-      m.fromArray(this.tuftMatrices, i * 16);
-      this.tufts.setMatrixAt(i, m);
-    }
-    this.tufts.instanceMatrix.needsUpdate = true;
-  }
+  // Grass methods are no-ops now; FireField/Game still call them.
+  indexTufts() {}
+  burnTufts() {}
+  regrowTufts() {}
 
   // ---- trees --------------------------------------------------------------
-  makePineGeometries() {
-    const cones = [];
-    const specs = [[1.25, 1.5, 0.9], [0.95, 1.4, 1.7], [0.65, 1.3, 2.5]];
-    for (const [r, h, y] of specs) {
-      const c = new THREE.ConeGeometry(r, h, 7);
-      c.translate(0, y + h / 2, 0);
-      cones.push(c);
-    }
-    const foliage = mergeGeometries(cones);
-    const trunk = new THREE.CylinderGeometry(0.14, 0.2, 1.1, 6);
-    trunk.translate(0, 0.55, 0);
-    return { foliage, trunk };
-  }
-
-  makeOakGeometries() {
-    const blobs = [];
-    const specs = [[0, 2.5, 0, 1.2], [0.7, 2.2, 0.2, 0.85], [-0.65, 2.3, -0.2, 0.9], [0.1, 3.1, -0.4, 0.8], [-0.2, 2.2, 0.7, 0.8]];
-    for (const [x, y, z, r] of specs) {
-      const b = new THREE.IcosahedronGeometry(r, 1);
-      b.translate(x, y, z);
-      blobs.push(b);
-    }
-    const foliage = mergeGeometries(blobs);
-    const trunk = new THREE.CylinderGeometry(0.18, 0.28, 1.9, 6);
-    trunk.translate(0, 0.95, 0);
-    return { foliage, trunk };
-  }
-
   buildTrees() {
     const rng = this.rng;
-    const trees = []; // {x,z,s,oak,rot}
-    const center = 7;
-
-    // interior trees
+    const trees = [];
     let tries = 0;
     const lim = this.half - 3;
-    while (trees.length < 20 && tries++ < 600) {
+    while (trees.length < 10 && tries++ < 600) {
       const x = (rng() * 2 - 1) * lim;
       const z = (rng() * 2 - 1) * lim;
-      if (Math.hypot(x, z) < center) continue;
-      if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 3.5)) continue;
-      const s = 0.9 + rng() * 0.7;
-      const t = { x, z, s, oak: rng() < 0.4, rot: rng() * Math.PI * 2 };
-      trees.push(t);
-      this.obstacles.push({ x, z, r: 0.4 * s });
+      if (Math.hypot(x, z) < 8) continue;
+      if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 7)) continue;
+      const s = 1.0 + rng() * 0.5;
+      trees.push({ x, z, s, round: rng() < 0.5, rot: rng() * Math.PI * 2 });
+      this.obstacles.push({ x, z, r: 0.45 * s });
+      this.shadowSpots.push({ x, z, size: 3.4 * s });
     }
 
-    // dense 3-layer border wall just outside the playable area
-    for (let layer = 0; layer < 3; layer++) {
-      const d = this.half + 1.4 + layer * 2.6;
-      const step = 2.0 + layer * 0.2;
-      for (let side = 0; side < 4; side++) {
-        for (let u = -d; u <= d; u += step) {
-          
-          const v = d + (rng() - 0.5) * 1.2;
-          const a = u + (rng() - 0.5) * 0.8;
-          let x; let z;
-          if (side === 0) { x = a; z = -v; } else if (side === 1) { x = a; z = v; } else if (side === 2) { x = -v; z = a; } else { x = v; z = a; }
-          trees.push({ x, z, s: 1.3 + rng() * 1.1, oak: rng() < 0.3, rot: rng() * Math.PI * 2 });
-        }
-      }
-    }
+    // two chunky silhouettes: cone-stack pine and round bush-tree (<= 8 segments)
+    const pineF = mergeGeometries([
+      new THREE.ConeGeometry(1.2, 1.7, 8).translate(0, 1.7, 0),
+      new THREE.ConeGeometry(0.85, 1.5, 8).translate(0, 2.7, 0),
+    ]);
+    const roundF = mergeGeometries([
+      new THREE.IcosahedronGeometry(1.15, 0).translate(0, 2.2, 0),
+      new THREE.IcosahedronGeometry(0.75, 0).translate(0.5, 3.0, 0.2),
+    ]);
+    const trunk = new THREE.CylinderGeometry(0.22, 0.3, 1.4, 6).translate(0, 0.7, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-    const pine = this.makePineGeometries();
-    const oak = this.makeOakGeometries();
-    const foliageMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
-
-    const groups = [
-      { list: trees.filter((t) => !t.oak), geo: pine, hue: 0.37, light: 0.2 },
-      { list: trees.filter((t) => t.oak), geo: oak, hue: 0.26, light: 0.3 },
-    ];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     const p = new THREE.Vector3();
-    const s = new THREE.Vector3();
+    const sc = new THREE.Vector3();
     const col = new THREE.Color();
+    const groups = [
+      { list: trees.filter((t) => !t.round), geo: pineF, colors: [0x2f9a4a, 0x3aa856] },
+      { list: trees.filter((t) => t.round), geo: roundF, colors: [0x5cc04a, 0x6fd055] },
+    ];
     for (const grp of groups) {
       const n = grp.list.length;
       if (!n) continue;
-      const fol = new THREE.InstancedMesh(grp.geo.foliage, foliageMat, n);
-      const trk = new THREE.InstancedMesh(grp.geo.trunk, trunkMat, n);
+      const fol = new THREE.InstancedMesh(grp.geo, mat, n);
+      const trk = new THREE.InstancedMesh(trunk, mat, n);
       grp.list.forEach((t, i) => {
         q.setFromAxisAngle(up, t.rot);
         p.set(t.x, 0, t.z);
-        s.set(t.s, t.s * (0.9 + rng() * 0.3), t.s);
-        m.compose(p, q, s);
+        sc.set(t.s, t.s, t.s);
+        m.compose(p, q, sc);
         fol.setMatrixAt(i, m);
         trk.setMatrixAt(i, m);
-        col.setHSL(grp.hue + (rng() - 0.5) * 0.06, 0.45 + rng() * 0.2, grp.light + (rng() - 0.5) * 0.08);
-        fol.setColorAt(i, col);
-        col.setHSL(0.07 + rng() * 0.03, 0.4, 0.2 + rng() * 0.08);
-        trk.setColorAt(i, col);
+        fol.setColorAt(i, col.setHex(grp.colors[i % grp.colors.length]));
+        trk.setColorAt(i, col.setHex(0x8a5a34));
       });
       for (const mesh of [fol, trk]) {
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         this.scene.add(mesh);
       }
@@ -290,13 +172,14 @@ export class World {
   // ---- rocks --------------------------------------------------------------
   buildRocks() {
     const rng = this.rng;
-    const N = 10;
-    const geo = new THREE.DodecahedronGeometry(1, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
-    const mesh = new THREE.InstancedMesh(geo, mat, N);
+    const N = 6;
+    const mesh = new THREE.InstancedMesh(
+      new THREE.DodecahedronGeometry(1, 0),
+      new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      N,
+    );
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
     const p = new THREE.Vector3();
     const s = new THREE.Vector3();
     const col = new THREE.Color();
@@ -306,29 +189,45 @@ export class World {
     while (placed < N && tries++ < 500) {
       const x = (rng() * 2 - 1) * lim;
       const z = (rng() * 2 - 1) * lim;
-      if (Math.hypot(x, z) < 5) continue;
-      const sc = 0.6 + rng() * 0.9;
-      if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + sc + 1.2)) continue;
-      e.set((rng() - 0.5) * 0.4, rng() * Math.PI * 2, (rng() - 0.5) * 0.4);
-      q.setFromEuler(e);
-      p.set(x, sc * 0.45, z);
-      s.set(sc * (0.9 + rng() * 0.4), sc * 0.7, sc * (0.9 + rng() * 0.4));
+      if (Math.hypot(x, z) < 7) continue;
+      const sc = 0.7 + rng() * 0.6;
+      if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + sc + 2)) continue;
+      q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rng() * 6.28);
+      p.set(x, sc * 0.5, z);
+      s.set(sc, sc * 0.75, sc);
       m.compose(p, q, s);
       mesh.setMatrixAt(placed, m);
-      const g = 0.4 + rng() * 0.16;
-      col.setRGB(g, g * 0.98, g * 0.94);
-      mesh.setColorAt(placed, col);
+      mesh.setColorAt(placed, col.setHex(rng() < 0.5 ? 0xb9bec8 : 0xa4aab6));
       this.obstacles.push({ x, z, r: sc * 0.9 });
+      this.shadowSpots.push({ x, z, size: sc * 3 });
       placed++;
     }
     mesh.count = placed;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     this.scene.add(mesh);
   }
 
-  // ---- queries ------------------------------------------------------------
+  // One instanced draw call for every static blob shadow.
+  buildStaticShadows() {
+    const { geo, mat } = blobShadowAssets();
+    const n = this.shadowSpots.length;
+    if (!n) return;
+    const mesh = new THREE.InstancedMesh(geo, mat, n);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const p = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    this.shadowSpots.forEach((sp, i) => {
+      p.set(sp.x + 0.2, 0.03, sp.z + 0.15);
+      s.set(sp.size, 1, sp.size);
+      m.compose(p, q, s);
+      mesh.setMatrixAt(i, m);
+    });
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+  }
+
+// ---- queries ------------------------------------------------------------
   // Push a circle out of obstacles and clamp it inside the playable bounds.
   resolveCircle(pos, r) {
     for (const o of this.obstacles) {
@@ -361,14 +260,5 @@ export class World {
     return out;
   }
 
-  // Sun (and its shadow frustum) follows the hero, snapped to shadow texels to avoid shimmer.
-  update() {
-    const hero = this.game.hero;
-    if (!hero) return;
-    const texel = 36 / 2048;
-    const tx = Math.round(hero.position.x / texel) * texel;
-    const tz = Math.round(hero.position.z / texel) * texel;
-    this.sun.target.position.set(tx, 0, tz);
-    this.sun.position.set(tx + SUN_OFFSET.x, SUN_OFFSET.y, tz + SUN_OFFSET.z);
-  }
+  update() {}
 }
