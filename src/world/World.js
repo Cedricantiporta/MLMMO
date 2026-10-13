@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { CONFIG } from '../core/config.js';
 import { mulberry32 } from '../core/rng.js';
 import { blobShadowAssets } from './blobShadow.js';
+import { paintGround, nearSoil } from './groundPaint.js';
 
 // Mobile-style meadow: flat saturated ground, a stone rim, a few chunky trees/rocks, blob shadows.
 // Map code is isolated here; the grass system was removed (tuft methods are kept as no-ops).
@@ -18,6 +19,7 @@ export class World {
     this.buildLights();
     this.buildGround();
     this.buildBorder();
+    this.buildDecor();
     this.buildTrees();
     this.buildRocks();
     this.buildStaticShadows();
@@ -41,43 +43,75 @@ export class World {
     outer.position.y = -0.4;
     this.scene.add(outer);
 
-    const S = 128;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const g = cv.getContext('2d');
-    g.fillStyle = '#7cc35a';
-    g.fillRect(0, 0, S, S);
-    const patches = [[0.25, 0.3, 0.3], [0.75, 0.65, 0.35], [0.55, 0.15, 0.2], [0.2, 0.8, 0.25]];
-    for (const [px, py, pr] of patches) {
-      const gr = g.createRadialGradient(px * S, py * S, 0, px * S, py * S, pr * S);
-      gr.addColorStop(0, 'rgba(160,220,110,0.35)');
-      gr.addColorStop(1, 'rgba(160,220,110,0)');
-      g.fillStyle = gr;
-      g.fillRect(0, 0, S, S);
-    }
-    const vg = g.createRadialGradient(S / 2, S / 2, S * 0.35, S / 2, S / 2, S * 0.75);
-    vg.addColorStop(0, 'rgba(40,110,40,0)');
-    vg.addColorStop(1, 'rgba(40,110,40,0.28)');
-    g.fillStyle = vg;
-    g.fillRect(0, 0, S, S);
-    const tex = new THREE.CanvasTexture(cv);
+    const w = this.half * 2 + 4;
+    const { canvas, soil } = paintGround({ size: w, px: 2048, seed: CONFIG.map.seed });
+    this.soil = soil;
+    const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 1;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = this.game.renderer?.capabilities.getMaxAnisotropy?.() ?? 1;
     this.groundTex = tex;
 
-    const w = this.half * 2 + 4;
     const geo = new THREE.PlaneGeometry(w, w);
     geo.rotateX(-Math.PI / 2);
     const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
     this.scene.add(ground);
     this.ground = ground;
+  }
 
-    // Sandy clearing at spawn.
-    const cg = new THREE.CircleGeometry(5, 32);
-    cg.rotateX(-Math.PI / 2);
-    const clearing = new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color: 0xe6d29a }));
-    clearing.position.y = 0.01;
-    this.scene.add(clearing);
+  // Keep-out test against painted soil (clearings + paths).
+  onSoil(x, z, margin = 0) { return nearSoil(this.soil, x, z, margin); }
+
+  // Fallen logs + a small stone campfire ring off-centre (one instanced draw call each).
+  buildDecor() {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const p = new THREE.Vector3();
+    const s = new THREE.Vector3(1, 1, 1);
+    const col = new THREE.Color();
+    const logs = [[-10, 5.5, 0.5], [9.5, -9, 1.9], [-21, 9, 2.6], [20, 2, 0.2]];
+    const logGeo = new THREE.CylinderGeometry(0.34, 0.38, 2.6, 7);
+    logGeo.rotateZ(Math.PI / 2);
+    const logMesh = new THREE.InstancedMesh(logGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), logs.length);
+    logs.forEach(([x, z, yaw], i) => {
+      q.setFromEuler(e.set(0, yaw, 0));
+      m.compose(p.set(x, 0.36, z), q, s);
+      logMesh.setMatrixAt(i, m);
+      logMesh.setColorAt(i, col.setHex(i % 2 ? 0x8a5a34 : 0x7a4e2c));
+      this.obstacles.push({ x, z, r: 0.55 });
+      this.obstacles.push({ x: x + Math.cos(yaw) * 0.9, z: z - Math.sin(yaw) * 0.9, r: 0.55 });
+      this.obstacles.push({ x: x - Math.cos(yaw) * 0.9, z: z + Math.sin(yaw) * 0.9, r: 0.55 });
+      this.shadowSpots.push({ x, z, size: 2.6 });
+    });
+    logMesh.frustumCulled = false;
+    this.scene.add(logMesh);
+
+    // campfire ring (offset from the spawn at 0,0)
+    const cx = 3.4, cz = -2.6, n = 9;
+    const stoneMesh = new THREE.InstancedMesh(
+      new THREE.DodecahedronGeometry(0.26, 0),
+      new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      n + 1,
+    );
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      q.setFromEuler(e.set(0, a * 3, 0));
+      m.compose(p.set(cx + Math.cos(a) * 0.8, 0.14, cz + Math.sin(a) * 0.8), q, s.set(1, 0.7, 1));
+      stoneMesh.setMatrixAt(i, m);
+      stoneMesh.setColorAt(i, col.setHex(i % 2 ? 0xb9bec8 : 0xa0a6b2));
+    }
+    // ash/char bed in the middle
+    q.identity();
+    m.compose(p.set(cx, 0.03, cz), q, s.set(2.6, 0.12, 2.6));
+    stoneMesh.setMatrixAt(n, m);
+    stoneMesh.setColorAt(n, col.setHex(0x4a3a30));
+    stoneMesh.frustumCulled = false;
+    this.scene.add(stoneMesh);
+    this.obstacles.push({ x: cx, z: cz, r: 1.05 });
   }
 
   // Low stone rim around the play field (4 boxes) with a darker cliff face below it.
@@ -117,6 +151,8 @@ export class World {
       const x = (rng() * 2 - 1) * lim;
       const z = (rng() * 2 - 1) * lim;
       if (Math.hypot(x, z) < 8) continue;
+      if (this.onSoil(x, z, 2.2)) continue;
+      if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 2.5)) continue;
       if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 7)) continue;
       const s = 1.0 + rng() * 0.5;
       trees.push({ x, z, s, round: rng() < 0.5, rot: rng() * Math.PI * 2 });
@@ -190,6 +226,7 @@ export class World {
       const x = (rng() * 2 - 1) * lim;
       const z = (rng() * 2 - 1) * lim;
       if (Math.hypot(x, z) < 7) continue;
+      if (this.onSoil(x, z, 1.8)) continue;
       const sc = 0.7 + rng() * 0.6;
       if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + sc + 2)) continue;
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rng() * 6.28);
