@@ -13,7 +13,7 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #a9d6ee;
+  background: #0f2a2a;
   color: var(--text);
   font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
   user-select: none;
@@ -174,3 +174,6 @@ html, body {
   .slot { width: 52px; height: 52px; }
   #skillbar { gap: 8px; }
 }
+
+/* Moody vignette over the canvas */
+#mood { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(2, 14, 12, 0.55) 100%); }

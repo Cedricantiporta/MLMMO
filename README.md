@@ -47,3 +47,9 @@ src/ui        DOM HUD (HP, skills, damage numbers)
 src/systems   Spawner
 ```
 The map is self-contained in `src/world/World.js`, so a new map can be swapped in without touching gameplay code.
+
+## Attack-speed stacks
+Six pips float above the archer. Each basic attack fills one, and each filled stack makes attacks 15% faster (both the bow draw and the attack interval). All stacks drop after 4 s without attacking. They pulse when full and blink just before they expire. Tune them in `CONFIG.hero.stacks`.
+
+## Visibility behind walls
+`src/fx/XRayRenderer.js` draws a cyan silhouette for the hero and red ones for enemies whenever cliffs, ruins or trees hide them, MOBA-style.

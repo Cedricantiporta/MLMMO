@@ -1,12 +1,18 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../core/config.js';
 import { mulberry32 } from '../core/rng.js';
 import { blobShadowAssets } from './blobShadow.js';
-import { paintGround, nearSoil } from './groundPaint.js';
+import { paintGround } from './groundPaint.js';
+import { WALLS, RIVER, RIVER_CURVE, riverDistance, sampleChain } from './layout.js';
+import { buildCliffs } from './cliffs.js';
+import { buildRuins } from './ruins.js';
+import { buildWater, BED_DEPTH } from './water.js';
+import { treeGeometry, bushGeometry, fernGeometry, boulderGeometry } from './foliage.js';
 
-// Mobile-style meadow: flat saturated ground, a stone rim, a few chunky trees/rocks, blob shadows.
-// Map code is isolated here; the grass system was removed (tuft methods are kept as no-ops).
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// Moody jungle arena: raised cliff walls, a shallow river, ancient ruins, dense foliage, blob shadows.
+// Everything is merged / instanced (≈ 20 draw calls). Tuft methods are no-ops kept for the contract.
 export class World {
   constructor(game) {
     this.game = game;
@@ -14,237 +20,239 @@ export class World {
     this.half = CONFIG.map.playHalf;
     this.obstacles = [];
     this.rng = mulberry32(CONFIG.map.seed);
-    this.shadowSpots = []; // {x,z,size} for static blob shadows
+    this.shadowSpots = [];
+    this.time = 0;
+    this.lit = new THREE.Vector3();
 
     this.buildLights();
     this.buildGround();
-    this.buildBorder();
-    this.buildDecor();
-    this.buildTrees();
-    this.buildRocks();
+    this.buildCliffs();
+    this.buildWater();
+    this.buildRuins();
+    this.buildFoliage();
     this.buildStaticShadows();
+    this.buildHeroGlow();
   }
 
-  // ---- lights (no shadow maps) --------------------------------------------
   buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb5d99a, 1.9));
-    const sun = new THREE.DirectionalLight(0xfff4dc, 1.5);
-    sun.position.set(12, 22, 8);
-    this.scene.add(sun);
-    this.sun = sun;
+    this.scene.add(new THREE.HemisphereLight(0x7fc4bd, 0x1b3324, 1.25));
+    const key = new THREE.DirectionalLight(0xffd9a0, 2.1); // warm golden key from one side
+    key.position.set(-16, 20, 10);
+    this.scene.add(key);
+    const rim = new THREE.DirectionalLight(0x4aa9b8, 0.55); // cool fill from the opposite side
+    rim.position.set(14, 8, -12);
+    this.scene.add(rim);
+    this.sun = key;
   }
 
-  // ---- ground -------------------------------------------------------------
+  // ---- ground: one subdivided plane, river bed carved into it, painted texture ----
   buildGround() {
-    // Outer skirt (darker, fades into fog) + play field with a soft vignette texture.
-    const outerGeo = new THREE.PlaneGeometry(260, 260);
-    outerGeo.rotateX(-Math.PI / 2);
-    const outer = new THREE.Mesh(outerGeo, new THREE.MeshLambertMaterial({ color: 0x5fa845 }));
-    outer.position.y = -0.4;
+    const outer = new THREE.Mesh(
+      new THREE.PlaneGeometry(300, 300).rotateX(-Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: 0x14301f }),
+    );
+    outer.position.y = -0.45;
     this.scene.add(outer);
 
-    const w = this.half * 2 + 4;
-    const { canvas, soil } = paintGround({ size: w, px: 2048, seed: CONFIG.map.seed });
-    this.soil = soil;
+    const size = CONFIG.map.size;
+    const { canvas } = paintGround({ size, px: 2048, seed: CONFIG.map.seed });
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.generateMipmaps = true;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
-    tex.magFilter = THREE.LinearFilter;
     tex.anisotropy = this.game.renderer?.capabilities.getMaxAnisotropy?.() ?? 1;
     this.groundTex = tex;
 
-    const geo = new THREE.PlaneGeometry(w, w);
-    geo.rotateX(-Math.PI / 2);
-    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
-    this.scene.add(ground);
-    this.ground = ground;
-  }
-
-  // Keep-out test against painted soil (clearings + paths).
-  onSoil(x, z, margin = 0) { return nearSoil(this.soil, x, z, margin); }
-
-  // Fallen logs + a small stone campfire ring off-centre (one instanced draw call each).
-  buildDecor() {
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    const p = new THREE.Vector3();
-    const s = new THREE.Vector3(1, 1, 1);
-    const col = new THREE.Color();
-    const logs = [[-10, 5.5, 0.5], [9.5, -9, 1.9], [-21, 9, 2.6], [20, 2, 0.2]];
-    const logGeo = new THREE.CylinderGeometry(0.34, 0.38, 2.6, 7);
-    logGeo.rotateZ(Math.PI / 2);
-    const logMesh = new THREE.InstancedMesh(logGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), logs.length);
-    logs.forEach(([x, z, yaw], i) => {
-      q.setFromEuler(e.set(0, yaw, 0));
-      m.compose(p.set(x, 0.36, z), q, s);
-      logMesh.setMatrixAt(i, m);
-      logMesh.setColorAt(i, col.setHex(i % 2 ? 0x8a5a34 : 0x7a4e2c));
-      this.obstacles.push({ x, z, r: 0.55 });
-      this.obstacles.push({ x: x + Math.cos(yaw) * 0.9, z: z - Math.sin(yaw) * 0.9, r: 0.55 });
-      this.obstacles.push({ x: x - Math.cos(yaw) * 0.9, z: z + Math.sin(yaw) * 0.9, r: 0.55 });
-      this.shadowSpots.push({ x, z, size: 2.6 });
-    });
-    logMesh.frustumCulled = false;
-    this.scene.add(logMesh);
-
-    // campfire ring (offset from the spawn at 0,0)
-    const cx = 3.4, cz = -2.6, n = 9;
-    const stoneMesh = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(0.26, 0),
-      new THREE.MeshLambertMaterial({ color: 0xffffff }),
-      n + 1,
-    );
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      q.setFromEuler(e.set(0, a * 3, 0));
-      m.compose(p.set(cx + Math.cos(a) * 0.8, 0.14, cz + Math.sin(a) * 0.8), q, s.set(1, 0.7, 1));
-      stoneMesh.setMatrixAt(i, m);
-      stoneMesh.setColorAt(i, col.setHex(i % 2 ? 0xb9bec8 : 0xa0a6b2));
+    const seg = 96;
+    const geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2);
+    const p = geo.attributes.position;
+    const rw = RIVER.w / 2;
+    for (let i = 0; i < p.count; i++) {
+      const d = riverDistance(p.getX(i), p.getZ(i));
+      if (d < rw + 1.2) p.setY(i, -BED_DEPTH * smooth(rw + 1.1, rw - 0.4, d));
     }
-    // ash/char bed in the middle
-    q.identity();
-    m.compose(p.set(cx, 0.03, cz), q, s.set(2.6, 0.12, 2.6));
-    stoneMesh.setMatrixAt(n, m);
-    stoneMesh.setColorAt(n, col.setHex(0x4a3a30));
-    stoneMesh.frustumCulled = false;
-    this.scene.add(stoneMesh);
-    this.obstacles.push({ x: cx, z: cz, r: 1.05 });
+    geo.computeVertexNormals();
+    this.ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
+    this.scene.add(this.ground);
   }
 
-  // Low stone rim around the play field (4 boxes) with a darker cliff face below it.
-  buildBorder() {
-    const h = this.half;
-    const t = 1.6;
-    const wallH = 0.9;
-    const L = (h + t) * 2;
-    const mk = (w, d, x, z) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), this.wallMat);
-      m.position.set(x, wallH / 2 - 0.05, z);
-      this.scene.add(m);
+  buildCliffs() {
+    const { geo, obstacles, tops } = buildCliffs();
+    this.tops = tops;
+    this.obstacles.push(...obstacles);
+    this.cliffMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+    this.scene.add(this.cliffMesh);
+  }
+
+  buildWater() {
+    const { mesh, mat } = buildWater();
+    this.water = mesh;
+    this.waterMat = mat;
+    this.scene.add(mesh);
+  }
+
+  buildRuins() {
+    const { geo, obstacles, shadows } = buildRuins();
+    this.obstacles.push(...obstacles);
+    this.shadowSpots.push(...shadows);
+    this.scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+  }
+
+  // ---- vegetation ---------------------------------------------------------
+  buildFoliage() {
+    const rng = this.rng;
+    const white = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    const white2 = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
+    const dummy = new THREE.Object3D();
+    const col = new THREE.Color();
+    const blockedByWall = (x, z, pad) => this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + pad);
+    const awayFromSpawn = (x, z, d) => Math.hypot(x, z) > d;
+    const inWall = (x, z) => this.wallDistance(x, z) < 0.4;
+
+    // trees
+    const near = [], far = [];
+    const L = this.half;
+    // overhanging cliff-top trees (west / north / east outer cliffs, plus interior plateaus)
+    for (let i = -L + 3; i < L - 1; i += 4.6) {
+      const j = (rng() - 0.5) * 1.6;
+      far.push({ x: -L - 0.7 + rng() * 0.8, z: i + j, y: 3.2, s: 0.8 + rng() * 0.35 });
+      far.push({ x: i + j, z: -L - 0.7 + rng() * 0.8, y: 3.2, s: 0.8 + rng() * 0.35 });
+      far.push({ x: L + 0.7 - rng() * 0.8, z: i + j, y: 3.2, s: 0.8 + rng() * 0.35 });
+    }
+    // back ring on the outside
+    for (let i = -L - 2; i <= L + 2; i += 5) {
+      far.push({ x: -L - 5 + rng() * 2, z: i, y: 0, s: 1.5 + rng() }, { x: i, z: -L - 5 + rng() * 2, y: 0, s: 1.5 + rng() }, { x: L + 5 - rng() * 2, z: i, y: 0, s: 1.5 + rng() });
+      far.push({ x: i, z: L + 5 + rng() * 2, y: 0, s: 1.0 + rng() * 0.4 });
+    }
+    // interior plateau trees on top of the cliffs
+    const interior = this.tops.filter((t) => t.wall === 'w1' || t.wall === 'w2');
+    for (let n = 0; n < 9; n++) {
+      const t = interior[(rng() * interior.length) | 0];
+      if (!t) break;
+      near.push({ x: t.x + t.nx * (rng() - 0.5) * 0.8, z: t.z + t.nz * (rng() - 0.5) * 0.8, y: t.h - 0.2, s: 0.6 + rng() * 0.25, onCliff: true });
+    }
+    // ground trees hugging wall bases
+    let tries = 0, placed = 0;
+    while (placed < 12 && tries++ < 600) {
+      const t = this.tops[(rng() * this.tops.length) | 0];
+      if (t.wall === 'outer' || t.wall === 'south') continue;
+      const side = rng() < 0.5 ? -1 : 1;
+      const off = t.t / 2 + 1.1 + rng() * 1.6;
+      const x = t.x + t.nx * off * side, z = t.z + t.nz * off * side;
+      if (Math.abs(x) > L - 2 || Math.abs(z) > L - 2) continue;
+      if (!awayFromSpawn(x, z, 9) || riverDistance(x, z) < 3.4 || blockedByWall(x, z, 1.3)) continue;
+      if (near.some((n) => !n.onCliff && Math.hypot(n.x - x, n.z - z) < 7)) continue;
+      const s = 0.7 + rng() * 0.3;
+      near.push({ x, z, y: 0, s });
+      this.obstacles.push({ x, z, r: 0.5 * s });
+      this.shadowSpots.push({ x, z, size: 4 * s });
+      placed++;
+    }
+    const mkTrees = (list, detail, seed) => {
+      if (!list.length) return;
+      const mesh = new THREE.InstancedMesh(treeGeometry(detail, seed), white, list.length);
+      list.forEach((t, i) => {
+        dummy.position.set(t.x, t.y, t.z);
+        dummy.rotation.set(0, rng() * 6.28, 0);
+        dummy.scale.setScalar(t.s);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        const v = 0.65 + rng() * 0.35;
+        mesh.setColorAt(i, col.setRGB(v * (0.9 + rng() * 0.2), v, v * (0.9 + rng() * 0.2)));
+      });
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
     };
-    this.wallMat = new THREE.MeshLambertMaterial({ color: 0xc9b98f });
-    const o = h + t / 2 + 0.3;
-    mk(L, t, 0, -o); mk(L, t, 0, o); mk(t, L - t * 2, -o, 0); mk(t, L - t * 2, o, 0);
-    // dark base so the rim reads as a raised edge
-    const baseMat = new THREE.MeshLambertMaterial({ color: 0x8d7a55 });
-    const base = new THREE.Mesh(new THREE.BoxGeometry(L + 1.2, 0.3, L + 1.2), baseMat);
-    base.position.y = -0.2;
-    // (hidden under the ground plane; only the outer lip peeks out)
-    this.scene.add(base);
+    mkTrees(near, 1, 3);
+    mkTrees(far, 0, 7);
+
+    // bushes / ferns: along wall bases, river banks, and on cliff-top edges
+    const bushes = [], ferns = [];
+    const add = (arr, x, z, y, s) => arr.push({ x, z, y, s });
+    for (const t of this.tops) {
+      if (t.wall === 'south') {
+        if (rng() < 0.6) add(bushes, t.x + t.nx * 0.5, t.z + t.nz * 0.5, t.h, 1.2 + rng() * 0.8);
+        continue;
+      }
+      // cliff-top edge clumps (inner side, overhanging)
+      const sideTop = t.wall === 'outer' ? -Math.sign(t.nx * t.x + t.nz * t.z) || 1 : (rng() < 0.5 ? -1 : 1);
+      if (rng() < 0.55) add(rng() < 0.5 ? bushes : ferns, t.x + t.nx * sideTop * (t.t / 2 - 0.5), t.z + t.nz * sideTop * (t.t / 2 - 0.5), t.h, 0.9 + rng() * 0.8);
+      // base clumps
+      for (let side = -1; side <= 1; side += 2) {
+        if (rng() > 0.55) continue;
+        const off = t.t / 2 + 0.3 + rng() * 1.2;
+        const x = t.x + t.nx * off * side, z = t.z + t.nz * off * side;
+        if (Math.abs(x) > L - 0.5 || Math.abs(z) > L - 0.5) continue;
+        if (!awayFromSpawn(x, z, 6.5) || this.wallDistance(x, z) < 0.3) continue;
+        add(rng() < 0.5 ? bushes : ferns, x, z, 0, 0.8 + rng() * 0.9);
+      }
+    }
+    // river banks + scattered undergrowth
+    const rs = sampleChain(RIVER_CURVE, 1.6);
+    for (const r of rs) {
+      for (let side = -1; side <= 1; side += 2) {
+        if (rng() > 0.45) continue;
+        const off = RIVER.w / 2 + 1.2 + rng() * 1.2;
+        const x = r.x + -r.tz * off * side, z = r.z + r.tx * off * side;
+        if (Math.abs(x) > L - 0.5 || Math.abs(z) > L - 0.5 || this.wallDistance(x, z) < 0.5 || !awayFromSpawn(x, z, 6.5)) continue;
+        add(rng() < 0.6 ? ferns : bushes, x, z, 0, 0.8 + rng() * 0.8);
+      }
+    }
+    for (let n = 0, tr = 0; n < 70 && tr < 400; tr++) {
+      const x = (rng() * 2 - 1) * (L - 1), z = (rng() * 2 - 1) * (L - 1);
+      if (!awayFromSpawn(x, z, 8) || riverDistance(x, z) < 2.4 || this.wallDistance(x, z) < 0.6) continue;
+      add(rng() < 0.5 ? ferns : bushes, x, z, 0, 0.7 + rng() * 0.7);
+      n++;
+    }
+    const mk = (list, geo, mat) => {
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((b, i) => {
+        dummy.position.set(b.x, b.y, b.z);
+        dummy.rotation.set(0, rng() * 6.28, 0);
+        dummy.scale.set(b.s, b.s * (0.8 + rng() * 0.4), b.s);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        const v = 0.55 + rng() * 0.45;
+        mesh.setColorAt(i, col.setRGB(v * (0.85 + rng() * 0.3), v, v * (0.85 + rng() * 0.3)));
+      });
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    };
+    mk(bushes, bushGeometry(), white);
+    mk(ferns, fernGeometry(), white2);
+
+    // boulders along the lanes
+    const rocks = [];
+    for (let n = 0, tr = 0; n < 9 && tr < 500; tr++) {
+      const x = (rng() * 2 - 1) * (L - 2), z = (rng() * 2 - 1) * (L - 2);
+      if (!awayFromSpawn(x, z, 9) || riverDistance(x, z) < 3 || blockedByWall(x, z, 2.2)) continue;
+      const s = 0.8 + rng() * 0.7;
+      rocks.push({ x, z, y: 0, s });
+      this.obstacles.push({ x, z, r: s * 0.85 });
+      this.shadowSpots.push({ x, z, size: s * 3.2 });
+      n++;
+    }
+    mk(rocks, boulderGeometry(), white);
   }
 
-  // Grass methods are no-ops now; FireField/Game still call them.
+  // distance from (x,z) to the nearest wall footprint (negative inside)
+  wallDistance(x, z) {
+    let best = 1e9;
+    for (const w of WALLS) {
+      for (let i = 0; i < w.pts.length - 1; i++) {
+        const [ax, az] = w.pts[i], [bx, bz] = w.pts[i + 1];
+        const dx = bx - ax, dz = bz - az;
+        const u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+        const d = Math.hypot(x - (ax + dx * u), z - (az + dz * u)) - w.t / 2;
+        if (d < best) best = d;
+      }
+    }
+    return best;
+  }
+
+  // Grass methods are no-ops; FireField/Game still call them.
   indexTufts() {}
   burnTufts() {}
   regrowTufts() {}
 
-  // ---- trees --------------------------------------------------------------
-  buildTrees() {
-    const rng = this.rng;
-    const trees = [];
-    let tries = 0;
-    const lim = this.half - 3;
-    while (trees.length < 10 && tries++ < 600) {
-      const x = (rng() * 2 - 1) * lim;
-      const z = (rng() * 2 - 1) * lim;
-      if (Math.hypot(x, z) < 8) continue;
-      if (this.onSoil(x, z, 2.2)) continue;
-      if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 2.5)) continue;
-      if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 7)) continue;
-      const s = 1.0 + rng() * 0.5;
-      trees.push({ x, z, s, round: rng() < 0.5, rot: rng() * Math.PI * 2 });
-      this.obstacles.push({ x, z, r: 0.45 * s });
-      this.shadowSpots.push({ x, z, size: 3.4 * s });
-    }
-
-    // two chunky silhouettes: cone-stack pine and round bush-tree (<= 8 segments)
-    const pineF = mergeGeometries([
-      new THREE.ConeGeometry(1.2, 1.7, 8).translate(0, 1.7, 0),
-      new THREE.ConeGeometry(0.85, 1.5, 8).translate(0, 2.7, 0),
-    ]);
-    const roundF = mergeGeometries([
-      new THREE.IcosahedronGeometry(1.15, 0).translate(0, 2.2, 0),
-      new THREE.IcosahedronGeometry(0.75, 0).translate(0.5, 3.0, 0.2),
-    ]);
-    const trunk = new THREE.CylinderGeometry(0.22, 0.3, 1.4, 6).translate(0, 0.7, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0);
-    const p = new THREE.Vector3();
-    const sc = new THREE.Vector3();
-    const col = new THREE.Color();
-    const groups = [
-      { list: trees.filter((t) => !t.round), geo: pineF, colors: [0x2f9a4a, 0x3aa856] },
-      { list: trees.filter((t) => t.round), geo: roundF, colors: [0x5cc04a, 0x6fd055] },
-    ];
-    for (const grp of groups) {
-      const n = grp.list.length;
-      if (!n) continue;
-      const fol = new THREE.InstancedMesh(grp.geo, mat, n);
-      const trk = new THREE.InstancedMesh(trunk, mat, n);
-      grp.list.forEach((t, i) => {
-        q.setFromAxisAngle(up, t.rot);
-        p.set(t.x, 0, t.z);
-        sc.set(t.s, t.s, t.s);
-        m.compose(p, q, sc);
-        fol.setMatrixAt(i, m);
-        trk.setMatrixAt(i, m);
-        fol.setColorAt(i, col.setHex(grp.colors[i % grp.colors.length]));
-        trk.setColorAt(i, col.setHex(0x8a5a34));
-      });
-      for (const mesh of [fol, trk]) {
-        mesh.frustumCulled = false;
-        this.scene.add(mesh);
-      }
-    }
-    this.treeCount = trees.length;
-  }
-
-  // ---- rocks --------------------------------------------------------------
-  buildRocks() {
-    const rng = this.rng;
-    const N = 6;
-    const mesh = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(1, 0),
-      new THREE.MeshLambertMaterial({ color: 0xffffff }),
-      N,
-    );
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const p = new THREE.Vector3();
-    const s = new THREE.Vector3();
-    const col = new THREE.Color();
-    const lim = this.half - 2;
-    let placed = 0;
-    let tries = 0;
-    while (placed < N && tries++ < 500) {
-      const x = (rng() * 2 - 1) * lim;
-      const z = (rng() * 2 - 1) * lim;
-      if (Math.hypot(x, z) < 7) continue;
-      if (this.onSoil(x, z, 1.8)) continue;
-      const sc = 0.7 + rng() * 0.6;
-      if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + sc + 2)) continue;
-      q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rng() * 6.28);
-      p.set(x, sc * 0.5, z);
-      s.set(sc, sc * 0.75, sc);
-      m.compose(p, q, s);
-      mesh.setMatrixAt(placed, m);
-      mesh.setColorAt(placed, col.setHex(rng() < 0.5 ? 0xb9bec8 : 0xa4aab6));
-      this.obstacles.push({ x, z, r: sc * 0.9 });
-      this.shadowSpots.push({ x, z, size: sc * 3 });
-      placed++;
-    }
-    mesh.count = placed;
-    mesh.frustumCulled = false;
-    this.scene.add(mesh);
-  }
-
-  // One instanced draw call for every static blob shadow.
   buildStaticShadows() {
     const { geo, mat } = blobShadowAssets();
     const n = this.shadowSpots.length;
@@ -264,8 +272,30 @@ export class World {
     this.scene.add(mesh);
   }
 
-// ---- queries ------------------------------------------------------------
-  // Push a circle out of obstacles and clamp it inside the playable bounds.
+  // Soft warm additive glow under the hero so it reads against the dark environment.
+  buildHeroGlow() {
+    const S = 128;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const c = cv.getContext('2d');
+    const gr = c.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    gr.addColorStop(0, 'rgba(255,240,200,0.9)');
+    gr.addColorStop(0.45, 'rgba(255,225,170,0.35)');
+    gr.addColorStop(1, 'rgba(255,220,160,0)');
+    c.fillStyle = gr;
+    c.fillRect(0, 0, S, S);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.2, 5.2).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }),
+    );
+    this.glow.position.y = 0.045;
+    this.glow.renderOrder = 3;
+    this.scene.add(this.glow);
+  }
+
+  // ---- queries ------------------------------------------------------------
   resolveCircle(pos, r) {
     for (const o of this.obstacles) {
       const dx = pos.x - o.x;
@@ -285,17 +315,34 @@ export class World {
     return pos;
   }
 
+  // Inside the play bounds and not inside any wall / prop circle (rivers are shallow = walkable).
+  isWalkable(x, z, margin = 0) {
+    const lim = this.half - 1;
+    if (Math.abs(x) > lim || Math.abs(z) > lim) return false;
+    for (const o of this.obstacles) {
+      const rr = o.r + margin;
+      if ((o.x - x) * (o.x - x) + (o.z - z) * (o.z - z) < rr * rr) return false;
+    }
+    return true;
+  }
+
   randomOpenPoint(avoidPos, minDist = 0) {
     const out = new THREE.Vector3();
     const lim = this.half - 2;
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       out.set((Math.random() * 2 - 1) * lim, 0, (Math.random() * 2 - 1) * lim);
       if (avoidPos && Math.hypot(out.x - avoidPos.x, out.z - avoidPos.z) < minDist) continue;
-      if (this.obstacles.some((o) => Math.hypot(o.x - out.x, o.z - out.z) < o.r + 1.2)) continue;
+      if (!this.isWalkable(out.x, out.z, 1.2)) continue;
       return out;
     }
+    out.set(0, 0, 4); // always-open fallback near the spawn glade
     return out;
   }
 
-  update() {}
+  update(dt) {
+    this.time += dt;
+    if (this.waterMat) this.waterMat.uniforms.time.value = this.time;
+    const h = this.game.hero;
+    if (h && this.glow) this.glow.position.set(h.position.x, 0.045, h.position.z);
+  }
 }

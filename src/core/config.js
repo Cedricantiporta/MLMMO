@@ -22,6 +22,8 @@ export const CONFIG = {
     respawnInvuln: 1.5,
     freezeImmunity: 1.5, // seconds of freeze immunity after thawing
     retargetInterval: 0.2,
+    // Attack-speed stacks shown above the hero: each basic attack adds one; all drop after `decay` s idle.
+    stacks: { max: 6, speedPerStack: 0.15, decay: 4 },
   },
 
   skills: {

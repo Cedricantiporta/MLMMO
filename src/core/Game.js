@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { XRayRenderer } from '../fx/XRayRenderer.js';
 import { CONFIG } from './config.js';
 import { Input } from './Input.js';
 import { CameraRig } from './CameraRig.js';
@@ -11,7 +12,7 @@ import { ElfArcher } from '../entities/ElfArcher.js';
 import { Spawner } from '../systems/Spawner.js';
 import { HealthOrb } from '../entities/HealthOrb.js';
 
-const SKY = 0xa9d6ee;
+const SKY = 0x123430;
 
 export class Game {
   constructor(container) {
@@ -36,12 +37,13 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(dpr, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = false; // blob shadows instead
-    this.renderer.toneMapping = THREE.NoToneMapping; // flat, saturated mobile look
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // moody filmic jungle look
+    this.renderer.toneMappingExposure = 1.15;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(SKY);
-    this.scene.fog = new THREE.Fog(SKY, 55, 95);
+    this.scene.fog = new THREE.Fog(SKY, 42, 88);
     this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, window.innerWidth / window.innerHeight, 0.5, 200);
 
     // systems, in contract order
@@ -55,6 +57,7 @@ export class Game {
     this.hero = new ElfArcher(this);
     this.hud = new HUD(this);
     this.spawner = new Spawner(this);
+    this.xray = new XRayRenderer(this);
     this.cameraRig.snap(this.hero.position);
 
     this.input.onKey('KeyP', () => { this.paused = !this.paused; });
@@ -84,7 +87,7 @@ export class Game {
   frame(dt) {
     if (!this.paused) this.update(dt);
     this.hud.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.xray.render();
   }
 
   // ---- simulation ---------------------------------------------------------

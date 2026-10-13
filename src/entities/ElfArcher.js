@@ -3,6 +3,7 @@ import { Unit } from './Unit.js';
 import { createElfArcherModel } from './ElfArcherModel.js';
 import { CONFIG } from '../core/config.js';
 import { rand, clamp, lerpAngle } from '../core/rng.js';
+import { AttackStacks } from './AttackStacks.js';
 import { Skill } from '../combat/Skill.js';
 import { Arrow } from '../combat/Arrow.js';
 import { RainOfArrows } from '../combat/RainOfArrows.js';
@@ -83,6 +84,11 @@ export class ElfArcher extends Unit {
     this.ring.renderOrder = 3;
     this.root.add(this.ring);
 
+    // Attack-speed stacks above the head.
+    this.stacks = 0;
+    this.stackIdle = 0;
+    this.stackBar = new AttackStacks(this.root, { max: cfg.stacks.max, height: cfg.height });
+
     // Behaviour state.
     this.yaw = 0;
     this.attackTimer = 0;
@@ -107,7 +113,20 @@ export class ElfArcher extends Unit {
   }
 
   get attackCooldownFrac() {
-    return clamp(this.attackTimer / this.cfg.attackInterval, 0, 1);
+    return clamp(this.attackTimer / this.attackInterval, 0, 1);
+  }
+
+  // Each stack shortens the attack cycle (interval and bow draw).
+  get attackSpeedMult() {
+    return 1 + this.stacks * this.cfg.stacks.speedPerStack;
+  }
+
+  get attackInterval() {
+    return this.cfg.attackInterval / this.attackSpeedMult;
+  }
+
+  get drawTime() {
+    return this.cfg.drawTime / this.attackSpeedMult;
   }
 
   getBowWorldPosition(out) {
@@ -131,6 +150,8 @@ export class ElfArcher extends Unit {
     this.drawT = 0;
     this.castT = 0;
     this.splitTime = 0;
+    this.stacks = 0;
+    this.stackBar.group.visible = false;
     this.ring.visible = false;
     this.model.bow.setPull(0);
   }
@@ -143,6 +164,8 @@ export class ElfArcher extends Unit {
     this.status.clear();
     this.status.freezeImmune = this.freezeImmunity;
     this.attackTimer = 0.4;
+    this.stacks = 0;
+    this.stackIdle = 0;
     this.aimHold = 0;
     this.castBlend = 0;
     this.aimBlend = 0;
@@ -185,6 +208,7 @@ export class ElfArcher extends Unit {
     }
     this.speedNow = dt > 0 ? moved / dt : 0;
 
+    this.updateStacks(dt);
     this.updateRing(dt);
     if (!frozen) this.animate(dt);
   }
@@ -288,7 +312,7 @@ export class ElfArcher extends Unit {
     const cfg = this.cfg;
     if (this.drawing) {
       this.drawT += dt;
-      if (this.drawT >= cfg.drawTime) {
+      if (this.drawT >= this.drawTime) {
         this.release();
         this.drawing = false;
         this.drawT = 0;
@@ -300,7 +324,7 @@ export class ElfArcher extends Unit {
     this.drawing = true;
     this.drawT = 0;
     this.shotTarget = this.target;
-    this.attackTimer = cfg.attackInterval;
+    this.attackTimer = this.attackInterval;
     this.aimHold = AIM_HOLD;
   }
 
@@ -331,6 +355,8 @@ export class ElfArcher extends Unit {
       if (crit) damage *= cfg.critMult;
       game.addActor(new Arrow(game, origin, t, { damage: Math.round(damage), crit, speed: cfg.arrowSpeed, glow: splitting }));
     });
+    this.stacks = Math.min(cfg.stacks.max, this.stacks + 1);
+    this.stackIdle = 0;
     this.aimHold = AIM_HOLD;
   }
 
@@ -385,6 +411,17 @@ export class ElfArcher extends Unit {
   }
 
   // ---------------- Visuals ----------------
+  updateStacks(dt) {
+    const decay = this.cfg.stacks.decay;
+    if (this.stacks > 0) {
+      this.stackIdle += dt;
+      if (this.stackIdle >= decay) this.stacks = 0;
+    }
+    const left = decay - this.stackIdle;
+    const fade = left < 0.8 ? 0.35 + 0.65 * Math.abs(Math.sin(this.game.time * 12)) : 1; // blink before expiring
+    this.stackBar.update(dt, this.game.camera, this.alive ? this.stacks : 0, fade, this.game.time);
+  }
+
   updateRing(dt) {
     const on = this.splitTime > 0;
     this.ring.visible = on;
@@ -413,7 +450,7 @@ export class ElfArcher extends Unit {
     this.castBlend += ((this.castT > 0 ? 1 : 0) - this.castBlend) * k;
     const a = this.aimBlend;
     const cb = this.castBlend;
-    const draw = this.drawing ? clamp(this.drawT / this.cfg.drawTime, 0, 1) : 0;
+    const draw = this.drawing ? clamp(this.drawT / this.drawTime, 0, 1) : 0;
     this.drawVis += (draw - this.drawVis) * kFast;
     m.bow.setPull(this.drawVis);
 
