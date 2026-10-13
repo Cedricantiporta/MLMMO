@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createArrowMesh } from '../combat/arrowMesh.js';
+import { bakeGroup } from './mergeParts.js';
 
 // Procedural low-poly female elf archer. ~1.82 tall, feet at y=0, facing +Z, character's left = +X.
 
@@ -59,6 +60,8 @@ export function createElfArcherModel() {
     return mesh;
   };
 
+  const bakedMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const bakedMatDS = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const root = new THREE.Group();
 
   // ---------------- Pelvis, legs, skirt ----------------
@@ -245,6 +248,8 @@ export function createElfArcherModel() {
     add(new THREE.TorusGeometry(0.03, 0.007, 4, 10), M.gold, bowGroup, 0, s * (BOW_TIP_Y - 0.09), BOW_TIP_Z * 0.8).rotation.x = Math.PI / 2;
   }
 
+  bakeGroup(bowGroup, { front: bakedMat, double: bakedMatDS });
+
   const stringGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, BOW_TIP_Y, BOW_TIP_Z),
     new THREE.Vector3(0, 0, BOW_TIP_Z),
@@ -272,6 +277,19 @@ export function createElfArcherModel() {
   // Bow in the left hand: vertical when the arm points forward (shoulder.rotation.x = -PI/2).
   bowGroup.rotation.x = Math.PI / 2;
   arms.L.grip.add(bowGroup);
+
+  // ---------------- Bake rigid parts into a few vertex-colored meshes ----------------
+  const joints = new Set([pelvis, spine, head, hairBack, cape, bowGroup,
+    legs.L.hip, legs.L.knee, legs.R.hip, legs.R.knee,
+    arms.L.shoulder, arms.L.elbow, arms.L.grip, arms.R.shoulder, arms.R.elbow, arms.R.grip]);
+  const bakeOpts = { front: bakedMat, double: bakedMatDS, keep: joints };
+  for (const j of joints) {
+    if (j === bowGroup) continue;
+    bakeGroup(j, { ...bakeOpts, forceDouble: j === cape || j === pelvis });
+  }
+  for (const m of Object.values(M)) m.dispose();
+  materials.length = 0;
+  materials.push(bakedMat, bakedMatDS);
 
   return {
     root,
