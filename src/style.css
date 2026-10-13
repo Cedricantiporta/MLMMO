@@ -75,6 +75,24 @@ html, body {
 .badge.frozen { color: #8fe3ff; }
 .badge.split { color: #b6f08a; }
 
+/* Target frame */
+#target-frame {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  width: 280px; padding: 8px 14px 9px; border-color: rgba(231, 90, 60, 0.7);
+  transition: opacity 0.15s;
+}
+#target-frame.hidden { opacity: 0; visibility: hidden; }
+.tf-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+#tf-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 0 8px currentColor; background: currentColor; }
+#tf-name { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; color: #ffb59a; text-shadow: 0 1px 2px #000; }
+#tf-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: left center;
+  background: linear-gradient(180deg, #ee6a3c 0%, #c2341a 55%, #861c0d 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+#tf-text { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
+#tf-tags { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.tf-tag { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; color: var(--muted); border: 1px solid rgba(185, 178, 155, 0.5); background: rgba(0, 0, 0, 0.45); }
+.tf-tag.burn { color: #ff9a4a; border-color: #ff9a4a; }
+.tf-tag.frozen { color: #8fe3ff; border-color: #8fe3ff; }
+
 /* Stats */
 #stats {
   position: absolute; top: 14px; right: 14px; padding: 8px 16px;
@@ -111,6 +129,11 @@ html, body {
 .slot .tag {
   position: absolute; top: -8px; right: -6px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
   padding: 1px 5px; border-radius: 6px; background: #2b4a2a; color: #b6f08a; border: 1px solid #6fae5a;
+}
+.slot .key {
+  position: absolute; top: -8px; left: -6px; font-size: 11px; font-weight: 800;
+  min-width: 18px; text-align: center; padding: 0 5px; border-radius: 6px;
+  background: #3a2f12; color: var(--gold-soft); border: 1px solid var(--gold);
 }
 .slot .label {
   position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%);
@@ -170,6 +193,7 @@ html, body {
 @media (max-width: 640px) {
   #player-frame { min-width: 0; transform: scale(0.85); transform-origin: top left; }
   #stats { font-size: 11px; padding: 6px 10px; }
+  #target-frame { top: 76px; width: 220px; }
   #help { display: none; }
   .slot { width: 52px; height: 52px; }
   #skillbar { gap: 8px; }

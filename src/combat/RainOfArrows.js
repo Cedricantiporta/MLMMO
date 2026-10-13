@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { rand } from '../core/rng.js';
-import { createArrowMesh } from './arrowMesh.js';
+import { createGlowArrowMesh } from './arrowMesh.js';
 
 const SPAWN_HEIGHT = 9;
 const FALL_SPEED = 34;
@@ -27,8 +27,9 @@ export class RainOfArrows {
     const start = new THREE.Vector3();
     hero.getBowWorldPosition(start);
     this.launchStart = start;
-    this.launchMesh = createArrowMesh();
+    this.launchMesh = createGlowArrowMesh();
     this.launchMesh.rotation.x = -Math.PI / 2; // +Z -> +Y
+    this.launchMesh.scale.setScalar(1.5);
     this.launchMesh.position.copy(start);
     game.scene.add(this.launchMesh);
 
@@ -128,7 +129,7 @@ export class RainOfArrows {
     const start = new THREE.Vector3(target.x + rand(1.5, 3), SPAWN_HEIGHT, target.z + rand(-1, 1));
     const dir = target.clone().sub(start).normalize();
 
-    const mesh = createArrowMesh();
+    const mesh = createGlowArrowMesh();
     mesh.position.copy(start);
     mesh.lookAt(start.clone().add(dir));
     this.game.scene.add(mesh);
@@ -145,7 +146,7 @@ export class RainOfArrows {
           a.state = 'stuck';
           a.mesh.position.copy(a.target).addScaledVector(a.dir, -0.4);
           a.mesh.position.y -= EMBED;
-          this.game.particles.burst(a.target, 3, { spread: 1.2, vy: 0.8, color: 0xb59a6a, size: 0.35, life: 0.5, drag: 2, grow: 0.8, alpha: 0.6 });
+          this.game.particles.burst(a.target, 4, { spread: 1.6, vy: 1.2, color: 0xffe08a, additive: true, size: 0.17, life: 0.4, drag: 2.5, gravity: 2 });
         }
       } else {
         a.timer += dt;

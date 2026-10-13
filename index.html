@@ -43,6 +43,13 @@
       </div>
     </div>
 
+    <!-- Target frame (selected enemy) -->
+    <div id="target-frame" class="panel hidden">
+      <div class="tf-head"><span id="tf-dot"></span><span id="tf-name">Slime</span></div>
+      <div class="hp-bar tf-bar"><div id="tf-fill"></div><div id="tf-text">0 / 0</div></div>
+      <div id="tf-tags"></div>
+    </div>
+
     <!-- Top-right stats -->
     <div id="stats" class="panel">Kills 0 · Slimes 0 · 0 FPS</div>
 
@@ -55,6 +62,7 @@
         <div class="cd"></div>
         <div class="cd-text"></div>
         <div class="tag">AUTO</div>
+        <div class="key">F</div>
         <div class="label">Auto Shot</div>
       </div>
       <div class="slot" id="slot-rain">
@@ -77,7 +85,7 @@
       </div>
     </div>
 
-    <div id="help">WASD move · Wheel zoom · P pause · Attacks &amp; skills are automatic</div>
+    <div id="help">WASD move · Click enemy to target · F attack target · Wheel zoom · P pause · Attacks &amp; skills are automatic</div>
 
     <div id="mood"></div>
     <div id="vignette"></div>

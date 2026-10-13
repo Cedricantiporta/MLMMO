@@ -4,6 +4,8 @@ Lightweight MMORPG-style action game built with **Three.js + Vite**. No external
 
 ## Play
 - **WASD / arrow keys:** move
+- **Left-click an enemy:** select it (red ring + target frame at top-center); click empty ground to deselect. The archer prefers the selected enemy over the nearest one
+- **F:** attack order. Attacks the selected enemy (else the nearest on-screen one) and chases it until it dies; WASD cancels the chase
 - **Mouse wheel:** zoom
 - **P:** pause
 - **Attacks and skills are automatic.** The archer targets the nearest enemy on screen. If it is out of range she walks to it (unless you are steering), then shoots.
@@ -12,8 +14,8 @@ Lightweight MMORPG-style action game built with **Three.js + Vite**. No external
 | Skill | Effect |
 |---|---|
 | Auto Shot | Homing arrows, crits |
-| Rain of Arrows | Fires an arrow skyward, then arrows rain for 2 s on the densest enemy cluster |
-| Splitting Shot | For 5 s, every shot hits up to 5 enemies |
+| Rain of Arrows | Fires a glowing arrow skyward, then golden glowing arrows rain for 2 s on the densest enemy cluster |
+| Splitting Shot | For 5 s, every shot fires 5 arrows in a 70° fan in front of her: extra homing arrows only for enemies inside the fan, the rest fly straight as visual fan arrows (hit the first enemy they pass) |
 
 There is no mana and there are no potions. Enemies drop **health orbs**: a random chance, with a guaranteed drop after 6 kills without one.
 
@@ -22,8 +24,8 @@ Enemies never touch you. Each type keeps its own distance and attack speed.
 | Slime | Attack | On death |
 |---|---|---|
 | Normal | Spit at mid range, medium speed | Splat |
-| Fire | Slow, long-range fireball | Explodes and sets the ground on fire. Burning ground hurts heroes **and** enemies |
-| Ice | Fast, short-range frost slam | Explodes and freezes everyone nearby, heroes **and** enemies |
+| Fire (2x size) | Slow, long-range fireball | Explodes and sets the ground on fire. Burning ground hurts heroes **and** enemies |
+| Ice (2x size) | Fast, short-range frost slam | Explodes and freezes everyone nearby, heroes **and** enemies |
 
 ## Develop
 ```bash

@@ -88,3 +88,56 @@ export class Arrow {
     this.ownMaterial?.dispose();
   }
 }
+
+// Non-homing arrow for Splitting Shot's fan: flies straight along `angle` (yaw, 0 = +Z), damages the
+// first enemy it passes near, and expires after `range` metres.
+export class FanArrow {
+  constructor(game, from, angle, { damage, crit = false, speed = CONFIG.hero.arrowSpeed, range, ignore = [] } = {}) {
+    this.game = game;
+    this.damage = damage;
+    this.crit = crit;
+    this.speed = speed;
+    this.range = range;
+    this.ignore = ignore;
+    this.travelled = 0;
+    this.dirX = Math.sin(angle);
+    this.dirZ = Math.cos(angle);
+
+    const material = getArrowMaterial().clone();
+    material.emissive = new THREE.Color(0x35ff7a);
+    material.emissiveIntensity = 0.7;
+    this.ownMaterial = material;
+    this.mesh = createArrowMesh(material);
+    this.mesh.position.copy(from);
+    this.mesh.lookAt(from.x + this.dirX, from.y, from.z + this.dirZ);
+    game.scene.add(this.mesh);
+  }
+
+  update(dt) {
+    const step = this.speed * dt;
+    const pos = this.mesh.position;
+    pos.x += this.dirX * step;
+    pos.z += this.dirZ * step;
+    this.travelled += step;
+
+    const hitR = CONFIG.skills.split.fanHitRadius;
+    for (const e of this.game.enemies) {
+      if (!e.alive || e.removed || this.ignore.includes(e)) continue;
+      if (Math.hypot(e.position.x - pos.x, e.position.z - pos.z) <= hitR + e.radius * 0.5) {
+        e.takeDamage(this.damage, { type: this.crit ? 'crit' : 'physical', crit: this.crit, source: this.game.hero });
+        e.aggro?.(CONFIG.slimeAI.aggroOnHit);
+        this.game.fx.hitSpark(pos, this.crit ? 0xffd34d : 0x7dff9a);
+        return false;
+      }
+    }
+    if (this.travelled >= this.range) return false;
+
+    this.game.particles.emit(pos, { color: 0x5dff8c, additive: true, size: 0.32, life: 0.3, alpha: 0.8, grow: -0.6 });
+    return true;
+  }
+
+  dispose() {
+    this.mesh.parent?.remove(this.mesh);
+    this.ownMaterial?.dispose();
+  }
+}

@@ -5,7 +5,7 @@ import { CONFIG } from '../core/config.js';
 import { rand, clamp, lerpAngle } from '../core/rng.js';
 import { AttackStacks } from './AttackStacks.js';
 import { Skill } from '../combat/Skill.js';
-import { Arrow } from '../combat/Arrow.js';
+import { Arrow, FanArrow } from '../combat/Arrow.js';
 import { RainOfArrows } from '../combat/RainOfArrows.js';
 
 const AIM_HOLD = 0.6; // seconds the aiming pose lingers after a shot
@@ -62,6 +62,8 @@ export class ElfArcher extends Unit {
     this.splitTime = 0;
     this.respawnTimer = 0;
     this.target = null;
+    this.selectedTarget = null; // clicked enemy (preferred over nearest)
+    this.forceTarget = null; // F attack order: chase + attack until it dies or WASD cancels
 
     // Model lives under a yaw group; the root itself never rotates.
     this.yawGroup = new THREE.Group();
@@ -145,6 +147,7 @@ export class ElfArcher extends Unit {
     this.respawnTimer = this.cfg.respawnTime;
     this.deathT = 0;
     this.target = null;
+    this.forceTarget = null;
     this.shotTarget = null;
     this.drawing = false;
     this.drawT = 0;
@@ -236,12 +239,41 @@ export class ElfArcher extends Unit {
     const range = this.cfg.attackRange;
     if (this.target && !this.isValidTarget(this.target)) this.target = null;
 
+    const sel = this.selectedTarget;
+    if (sel && (!sel.alive || sel.removed)) this.selectedTarget = null;
+    const forced = this.forceTarget;
+    if (forced && (!forced.alive || forced.removed)) this.forceTarget = null;
+    if (this.forceTarget) {
+      this.target = this.forceTarget;
+      return;
+    }
+    if (this.selectedTarget && this.isValidTarget(this.selectedTarget)) {
+      this.target = this.selectedTarget;
+      return;
+    }
+
     this.retargetT -= dt;
     if (this.target && this.retargetT > 0) return;
     this.retargetT = this.cfg.retargetInterval;
 
     if (this.target && distXZ(this.position, this.target.position) <= range) return;
     this.target = game.nearestEnemy(this.position, Infinity, (e) => this.isValidTarget(e));
+  }
+
+  // F key: commit to the selected enemy (else the nearest on-screen one).
+  orderAttack() {
+    if (!this.alive) return;
+    let t = this.selectedTarget;
+    if (!t || !t.alive || t.removed) {
+      t = this.game.nearestEnemy(this.position, Infinity, (e) => this.isValidTarget(e));
+    }
+    if (!t) {
+      this.game.hud.floatText(this, 'No target', 'normal');
+      return;
+    }
+    this.selectedTarget = t;
+    this.forceTarget = t;
+    this.target = t;
   }
 
   // ---------------- Movement ----------------
@@ -256,6 +288,7 @@ export class ElfArcher extends Unit {
     }
     const inputLen = Math.hypot(dx, dz);
     let moving = inputLen > 0.01;
+    if (moving) this.forceTarget = null; // steering cancels the forced chase
     let mag = Math.min(1, inputLen);
 
     if (!moving && this.target) {
@@ -339,22 +372,43 @@ export class ElfArcher extends Unit {
     if (!primary || !primary.alive || distXZ(this.position, primary.position) > range + 1) return;
 
     const targets = [primary];
+    const fanDirs = [];
     const splitting = this.splitTime > 0;
+    const split = CONFIG.skills.split;
+    const half = THREE.MathUtils.degToRad(split.fanHalfAngleDeg);
+    const center = Math.atan2(primary.position.x - this.position.x, primary.position.z - this.position.z);
     if (splitting) {
-      const extras = game.enemies
-        .filter((e) => e !== primary && this.isValidTarget(e) && distXZ(this.position, e.position) <= range)
-        .sort((a, b) => distXZ(this.position, a.position) - distXZ(this.position, b.position));
-      targets.push(...extras.slice(0, CONFIG.skills.split.maxTargets - 1));
+      // Extra homing arrows only for enemies inside the forward fan, closest to its centre line first.
+      const inFan = [];
+      for (const e of game.enemies) {
+        if (e === primary || !this.isValidTarget(e) || distXZ(this.position, e.position) > range) continue;
+        const a = Math.atan2(e.position.x - this.position.x, e.position.z - this.position.z);
+        const off = Math.abs(angleDiff(a, center));
+        if (off <= half) inFan.push({ e, off });
+      }
+      inFan.sort((a, b) => a.off - b.off);
+      for (const f of inFan.slice(0, split.maxTargets - 1)) targets.push(f.e);
+      // Remaining arrows fan out visually at evenly spaced angles.
+      const n = split.maxTargets - targets.length;
+      for (let i = 0; i < n; i++) fanDirs.push(center - half + ((i + 0.5) / n) * 2 * half);
     }
 
     const origin = this.getBowWorldPosition(new THREE.Vector3());
-    targets.forEach((t, i) => {
+    const rollDamage = (i) => {
       let damage = rand(cfg.damage[0], cfg.damage[1]);
-      if (i > 0) damage *= CONFIG.skills.split.extraDamageMult;
+      if (i > 0) damage *= split.extraDamageMult;
       const crit = Math.random() < cfg.critChance;
       if (crit) damage *= cfg.critMult;
-      game.addActor(new Arrow(game, origin, t, { damage: Math.round(damage), crit, speed: cfg.arrowSpeed, glow: splitting }));
+      return { damage: Math.round(damage), crit };
+    };
+    targets.forEach((t, i) => {
+      const { damage, crit } = rollDamage(i);
+      game.addActor(new Arrow(game, origin, t, { damage, crit, speed: cfg.arrowSpeed, glow: splitting }));
     });
+    for (const a of fanDirs) {
+      const { damage, crit } = rollDamage(1);
+      game.addActor(new FanArrow(game, origin, a, { damage, crit, speed: cfg.arrowSpeed, range, ignore: targets }));
+    }
     this.stacks = Math.min(cfg.stacks.max, this.stacks + 1);
     this.stackIdle = 0;
     this.aimHold = AIM_HOLD;
@@ -508,6 +562,13 @@ export class ElfArcher extends Unit {
     this.ringMat.dispose();
     super.dispose();
   }
+}
+
+// Signed shortest angular difference a - b.
+function angleDiff(a, b) {
+  let d = a - b;
+  d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+  return d;
 }
 
 function lerp(a, b, t) {

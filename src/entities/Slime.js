@@ -70,7 +70,7 @@ export class Slime extends Unit {
     super(game, { maxHp: def.hp, radius: def.radius, team: 'enemy', height: def.radius * 1.5 });
     this.type = type;
     this.def = def;
-    this.aimHeight = 0.45;
+    this.aimHeight = 0.45 * (def.radius / BODY_RADIUS);
     this.position.copy(position);
 
     this.s = def.radius / BODY_RADIUS; // model scale
@@ -238,6 +238,7 @@ export class Slime extends Unit {
     this.hpFill.renderOrder = 999;
     this.hpBar.add(bg, this.hpFill);
     this.hpBar.position.y = 1.5 * this.s + 0.15;
+    this.hpBar.scale.setScalar(Math.max(1, 0.6 * this.s));
     this.hpBar.visible = false;
     this.root.add(this.hpBar);
   }
@@ -514,7 +515,7 @@ export class Slime extends Unit {
     let y = 0;
     if (cycle < 0.65) {
       const k = Math.sin((cycle / 0.65) * Math.PI);
-      y = k * 0.26 * this.moveAmt;
+      y = k * 0.26 * this.moveAmt * this.s;
       q += k * 0.16 * this.moveAmt;
     } else {
       q -= Math.sin(((cycle - 0.65) / 0.35) * Math.PI) * 0.2 * this.moveAmt;
@@ -533,7 +534,7 @@ export class Slime extends Unit {
         boost = 1 + p * 0.8;
       } else if (a.phase === 'jump') {
         const k = Math.sin(p * Math.PI);
-        y += k * 0.6;
+        y += k * 0.6 * this.s;
         q += k * 0.28 - crouch * (1 - p);
         glow = 0.4 * (1 - p) + 0.2;
       } else {
@@ -579,7 +580,7 @@ export class Slime extends Unit {
       if (this.fxTimer <= 0) {
         this.fxTimer = rand(0.12, 0.3);
         game.particles.emit(
-          { x: this.position.x + rand(-0.2, 0.2), y: top + 0.15, z: this.position.z + rand(-0.2, 0.2) },
+          { x: this.position.x + rand(-0.2, 0.2) * this.s, y: top + 0.15, z: this.position.z + rand(-0.2, 0.2) * this.s },
           { vx: rand(-0.3, 0.3), vy: rand(0.8, 1.6), vz: rand(-0.3, 0.3), color: 0xffa040, size: 0.14, life: 0.8, additive: true, grow: -0.1 }
         );
       }
@@ -588,7 +589,7 @@ export class Slime extends Unit {
       if (this.fxTimer <= 0) {
         this.fxTimer = rand(0.35, 0.9);
         game.particles.emit(
-          { x: this.position.x + rand(-0.3, 0.3), y: this.position.y + rand(0.3, 0.9) * this.s, z: this.position.z + rand(-0.3, 0.3) },
+          { x: this.position.x + rand(-0.3, 0.3) * this.s, y: this.position.y + rand(0.3, 0.9) * this.s, z: this.position.z + rand(-0.3, 0.3) * this.s },
           { vx: rand(-0.2, 0.2), vy: rand(0.1, 0.5), vz: rand(-0.2, 0.2), color: 0xe8fbff, size: 0.13, life: 0.6, additive: true, grow: -0.15 }
         );
       }

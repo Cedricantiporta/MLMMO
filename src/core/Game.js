@@ -8,6 +8,7 @@ import { Effects } from '../fx/Effects.js';
 import { World } from '../world/World.js';
 import { FireField } from '../world/FireField.js';
 import { HUD } from '../ui/HUD.js';
+import { Targeting } from './Targeting.js';
 import { ElfArcher } from '../entities/ElfArcher.js';
 import { Spawner } from '../systems/Spawner.js';
 import { HealthOrb } from '../entities/HealthOrb.js';
@@ -56,10 +57,12 @@ export class Game {
     this.world.indexTufts(this.fire); // no-op (grass removed)
     this.hero = new ElfArcher(this);
     this.hud = new HUD(this);
+    this.targeting = new Targeting(this);
     this.spawner = new Spawner(this);
     this.xray = new XRayRenderer(this);
     this.cameraRig.snap(this.hero.position);
 
+    this.input.onKey('KeyF', () => { if (!this.paused) this.hero.orderAttack(); });
     this.input.onKey('KeyP', () => { this.paused = !this.paused; });
     window.addEventListener('resize', () => this.resize());
   }
@@ -119,6 +122,7 @@ export class Game {
     }
 
     this.separate();
+    this.targeting.update(dt);
     this.fire.update(dt);
 
     // actors: update returns false when finished

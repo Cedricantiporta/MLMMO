@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 const GAME_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyP', 'Space',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyP', 'KeyF', 'Space',
 ]);
 
 // Keyboard state: a Set of pressed `KeyboardEvent.code` values plus per-key callbacks.

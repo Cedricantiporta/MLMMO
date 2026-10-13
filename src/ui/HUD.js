@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from '../core/config.js';
 
 const POOL = 60;
 
@@ -18,6 +19,10 @@ export class HUD {
     this.deathCount = $('death-count');
     this.pausedEl = $('paused');
     this.floaterRoot = $('floaters');
+    this.tf = {
+      el: $('target-frame'), dot: $('tf-dot'), name: $('tf-name'), fill: $('tf-fill'), text: $('tf-text'), tags: $('tf-tags'),
+      unit: null, key: '', hpText: '',
+    };
 
     this.slots = {
       auto: this.bindSlot('slot-auto'),
@@ -119,6 +124,7 @@ export class HUD {
     this.hpFill.classList.toggle('low', frac < 0.25 && hero.alive !== false);
 
     this.updateBadges(hero);
+    this.updateTargetFrame(hero);
     this.updateSkills(hero);
 
     // stats (throttled)
@@ -153,6 +159,47 @@ export class HUD {
       (burning ? '<span class="badge burn">Burning</span>' : '') +
       (frozen ? '<span class="badge frozen">Frozen</span>' : '') +
       (split ? '<span class="badge split">Splitting Shot</span>' : '');
+  }
+
+  // Top-centre frame for the clicked enemy: name, type dot, HP, attack style and statuses.
+  updateTargetFrame(hero) {
+    const tf = this.tf;
+    const t = hero.selectedTarget;
+    const show = !!t && t.alive && !t.removed;
+    if (!show) {
+      if (tf.unit) { tf.unit = null; tf.el.classList.add('hidden'); }
+      return;
+    }
+    if (tf.unit !== t) {
+      tf.unit = t;
+      tf.key = '';
+      const def = CONFIG.slimes[t.type] || t.def;
+      tf.name.textContent = def.label;
+      tf.dot.style.color = `#${def.color.toString(16).padStart(6, '0')}`;
+      tf.style = this.attackStyle(def);
+      tf.el.classList.remove('hidden');
+    }
+    const max = t.maxHp || 1;
+    tf.fill.style.transform = `scaleX(${Math.max(0, Math.min(1, t.hp / max))})`;
+    const txt = `${Math.ceil(t.hp)} / ${max}`;
+    if (txt !== tf.hpText) { tf.hpText = txt; tf.text.textContent = txt; }
+    const burning = !!t.status?.burning;
+    const frozen = !!t.status?.frozen;
+    const key = `${burning}${frozen}`;
+    if (key !== tf.key) {
+      tf.key = key;
+      tf.tags.innerHTML =
+        `<span class="tf-tag">${tf.style}</span>` +
+        (burning ? '<span class="tf-tag burn">Burning</span>' : '') +
+        (frozen ? '<span class="tf-tag frozen">Frozen</span>' : '');
+    }
+  }
+
+  attackStyle(def) {
+    const a = def.attack;
+    const speed = a.interval <= 1.3 ? 'Fast' : a.interval >= 2 ? 'Slow' : 'Medium';
+    const reach = a.kind === 'slam' ? 'Melee-range slam' : `Ranged ${a.range}m`;
+    return `${reach} \u2022 ${speed}`;
   }
 
   setSlot(slot, remainingFrac, text, ready, active) {

@@ -47,6 +47,8 @@ export const CONFIG = {
       duration: 5,
       maxTargets: 5,
       extraDamageMult: 0.85,
+      fanHalfAngleDeg: 35, // extra arrows only fly inside this cone in front of the hero
+      fanHitRadius: 0.6,
     },
   },
 
@@ -54,7 +56,7 @@ export const CONFIG = {
   slimes: {
     normal: {
       label: 'Slime',
-      hp: 110,
+      hp: 55,
       speed: 2.6,
       radius: 0.55,
       color: 0x5fd068,
@@ -65,7 +67,7 @@ export const CONFIG = {
       label: 'Fire Slime',
       hp: 90,
       speed: 2.3,
-      radius: 0.55,
+      radius: 1.1, // 2x size
       color: 0xff6a2a,
       attack: { kind: 'fireball', range: 7, interval: 2.4, damage: 16, windup: 0.5, projectileSpeed: 8 },
       standoff: 4.5,
@@ -76,7 +78,7 @@ export const CONFIG = {
       label: 'Ice Slime',
       hp: 100,
       speed: 2.9,
-      radius: 0.55,
+      radius: 1.1, // 2x size
       color: 0x6fd8ff,
       attack: { kind: 'slam', range: 2.6, interval: 1.1, damage: 9, windup: 0.3, ringRadius: 2.9 },
       standoff: 1.6,
