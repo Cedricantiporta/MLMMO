@@ -160,6 +160,7 @@ export class HUD {
     if (p !== slot.p) { slot.p = p; slot.cd.style.setProperty('--p', p); }
     if (slot.label !== text) { slot.label = text; slot.text.textContent = text; }
     slot.el.classList.toggle('ready', ready && !active);
+    slot.el.classList.toggle('cooling', !ready && !active && text !== '');
     slot.el.classList.toggle('active', active);
   }
 
