@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as UnitModule from './Unit.js';
+import { Unit } from './Unit.js';
 import { createElfArcherModel } from './ElfArcherModel.js';
 import { CONFIG } from '../core/config.js';
 import { rand, clamp, lerpAngle } from '../core/rng.js';
@@ -48,7 +48,6 @@ function makeRingTexture() {
 }
 
 // Unit may be exported as a named or default export.
-const Unit = UnitModule.Unit ?? UnitModule.default;
 
 export class ElfArcher extends Unit {
   constructor(game) {
@@ -224,12 +223,12 @@ export class ElfArcher extends Unit {
   // ---------------- Movement ----------------
   updateMovement(dt) {
     const game = this.game;
-    const mv = game.input.moveVector;
+    const mv = game.input.moveVector(this._moveInput ??= { x: 0, z: 0 });
     let dx = 0;
     let dz = 0;
     if (mv) {
       dx = mv.x || 0;
-      dz = mv.z ?? mv.y ?? 0;
+      dz = mv.z || 0;
     }
     const inputLen = Math.hypot(dx, dz);
     let moving = inputLen > 0.01;

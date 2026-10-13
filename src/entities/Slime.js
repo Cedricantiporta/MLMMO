@@ -1,11 +1,10 @@
 import * as THREE from 'three';
-import * as UnitModule from './Unit.js';
+import { Unit } from './Unit.js';
 import { CONFIG } from '../core/config.js';
 import { rand, lerpAngle, clamp } from '../core/rng.js';
 import { EnemyProjectile } from '../combat/EnemyProjectile.js';
 
 // Unit may be a default or named export depending on the engine file.
-const Unit = UnitModule.default ?? UnitModule.Unit;
 
 // ---------------------------------------------------------------------------------------------
 // Shared geometry / materials (module-level, live for the whole session)

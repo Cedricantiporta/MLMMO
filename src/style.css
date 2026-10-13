@@ -164,6 +164,7 @@ html, body {
 .floater.ice { color: #7fe0ff; }
 .floater.poison { color: #c8e84a; }
 .floater.heal { color: #6dff8a; font-size: 19px; }
+.floater.skill { color: #b6ff7a; font-size: 18px; letter-spacing: 1px; }
 
 @media (max-width: 640px) {
   #player-frame { min-width: 0; transform: scale(0.85); transform-origin: top left; }
