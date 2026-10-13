@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>MLMMO — Elf Archer</title>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <!-- Player frame -->
+    <div id="player-frame" class="panel">
+      <div class="crest">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <defs>
+            <linearGradient id="crestg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2e5a3a" /><stop offset="1" stop-color="#12261a" />
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="24" r="22" fill="url(#crestg)" stroke="#d9b45a" stroke-width="2" />
+          <!-- hair -->
+          <path d="M12 30c-1-10 4-18 12-18s13 8 12 18c-2-6-5-9-12-9s-10 3-12 9z" fill="#e8d28a" />
+          <!-- face -->
+          <ellipse cx="24" cy="27" rx="7" ry="8.5" fill="#f1cfae" />
+          <!-- pointed ears -->
+          <path d="M17 25l-8-4 7 8z M31 25l8-4-7 8z" fill="#f1cfae" />
+          <!-- eyes -->
+          <ellipse cx="21" cy="27" rx="1.2" ry="1.6" fill="#2d6b3f" />
+          <ellipse cx="27" cy="27" rx="1.2" ry="1.6" fill="#2d6b3f" />
+          <path d="M22 32c1.2 1 2.8 1 4 0" stroke="#b5705a" stroke-width="1" fill="none" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div class="pf-body">
+        <div class="pf-name">Sylwen · Elf Archer</div>
+        <div class="hp-bar">
+          <div id="hp-lag"></div>
+          <div id="hp-fill"></div>
+          <div id="hp-text">0 / 0</div>
+        </div>
+        <div id="statuses"></div>
+      </div>
+    </div>
+
+    <!-- Top-right stats -->
+    <div id="stats" class="panel">Kills 0 · Slimes 0 · 0 FPS</div>
+
+    <!-- Skill bar -->
+    <div id="skillbar">
+      <div class="slot" id="slot-auto">
+        <div class="icon">
+          <svg viewBox="0 0 32 32"><path d="M5 27L25 7" stroke="#e8d9b0" stroke-width="2.4" stroke-linecap="round"/><path d="M25 7l-1 7M25 7l-7 1" stroke="#e8d9b0" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M5 27l-2-4M5 27l4 2" stroke="#9bd37f" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </div>
+        <div class="cd"></div>
+        <div class="cd-text"></div>
+        <div class="tag">AUTO</div>
+        <div class="label">Auto Shot</div>
+      </div>
+      <div class="slot" id="slot-rain">
+        <div class="icon">
+          <svg viewBox="0 0 32 32" fill="none" stroke-linecap="round"><path d="M8 4l-3 9M16 2l-3 11M24 4l-3 9" stroke="#e8d9b0" stroke-width="2.2"/><path d="M5 13l-1.5-2.5M5 13l2.5-1M13 13l-1.5-2.5M13 13l2.5-1M21 13l-1.5-2.5M21 13l2.5-1" stroke="#9bd37f" stroke-width="1.8"/><ellipse cx="16" cy="25" rx="11" ry="4" stroke="#d9b45a" stroke-width="2"/><path d="M10 20l-1 3M16 19v4M22 20l1 3" stroke="#e8d9b0" stroke-width="1.8"/></svg>
+        </div>
+        <div class="cd"></div>
+        <div class="cd-text"></div>
+        <div class="tag">AUTO</div>
+        <div class="label">Rain of Arrows</div>
+      </div>
+      <div class="slot" id="slot-split">
+        <div class="icon">
+          <svg viewBox="0 0 32 32" fill="none" stroke-linecap="round"><path d="M3 16h12" stroke="#e8d9b0" stroke-width="2.4"/><path d="M15 16L28 6M15 16h13M15 16l13 10" stroke="#9bd37f" stroke-width="2.4"/><path d="M28 6l-6 0.5M28 6l-1 6M28 16l-4-3M28 16l-4 3M28 26l-6-0.5M28 26l-1-6" stroke="#d9b45a" stroke-width="1.8"/></svg>
+        </div>
+        <div class="cd"></div>
+        <div class="cd-text"></div>
+        <div class="tag">AUTO</div>
+        <div class="label">Splitting Shot</div>
+      </div>
+    </div>
+
+    <div id="help">WASD move · Wheel zoom · P pause · Attacks &amp; skills are automatic</div>
+
+    <div id="vignette"></div>
+    <div id="floaters"></div>
+
+    <div id="death" class="overlay hidden">
+      <div class="overlay-title">You have fallen</div>
+      <div class="overlay-sub">Respawning in <span id="death-count">4</span>…</div>
+    </div>
+    <div id="paused" class="overlay hidden">
+      <div class="overlay-title">Paused</div>
+      <div class="overlay-sub">Press P to resume</div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
